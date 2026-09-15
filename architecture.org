@@ -1,0 +1,53 @@
+I have this architecture in mind for the project.
+
+There would be an MQTT client on the ESP32 module (which will have all
+the sensors connected to it) that pushes sensor data whenever readings
+are taken.
+
+The controller laptop will run a Wi-Fi Mobile Hotspot to provide a
+constant local IP address for the ESP32, alongside an MQTT broker to
+receive the incoming data.
+
+There would be a web server on the laptop that receives the data from
+the broker and displays it on its own website UI interface.
+
+It should also detect the garbage in the camera feed since this is for
+this device which can detect garbage and clean but we don't have the
+cleaning mechanism yet, so we will just display the things.
+
+We also have not much idea of how to connect the sensors at once.
+
+We have camera sensor, turbidity sensor, ultrasonic sensor (for water
+level), and ph sensor, and also temperature sensor.
+
+* Extended Architecture & Integration Plan
+
+** 1. ESP32 Subsystem (Sensor Node)
+- **Sensors**: Camera (ESP32-CAM), Turbidity, Ultrasonic, pH, and Temperature.
+- **Hardware Integration & Limitations**: 
+  - The ESP32-CAM has limited available GPIO pins because most are used by the camera and SD card.
+  - The integrated code in `Guardian/Main.ino` assigns the following pins:
+    - Turbidity: GPIO 13
+    - pH: GPIO 14
+    - Temperature: GPIO 15
+    - Ultrasonic Trig: GPIO 12
+    - Ultrasonic Echo: GPIO 16
+  - **Important Limitation**: GPIOs 12, 13, 14, and 15 belong to ADC2. On the ESP32, ADC2 cannot be used for `analogRead()` while Wi-Fi is active. Because the device streams video and sends MQTT messages over Wi-Fi, reading analog sensors directly on these pins will fail or return invalid data.
+  - **Recommended Solution**: To reliably read analog sensors (Turbidity, pH, Temperature) alongside Wi-Fi and Camera, use an external I2C ADC (like the ADS1115) connected to the ESP32-CAM's I2C pins, or use a separate standard ESP32 board dedicated to sensors that communicates with the ESP32-CAM or directly to the MQTT broker.
+- **Software**: The integrated `Guardian/Main.ino` sketch combines the camera streaming and sensor reading logic. It streams video over HTTP (port 81) and periodically publishes a combined JSON payload of all sensor readings to the `esp32/sensors` MQTT topic.
+** 2. Controller Laptop (Central Hub)
+- **Network**: Runs a Wi-Fi Mobile Hotspot to host the local network.
+- **MQTT Broker**: Runs an MQTT broker (like Eclipse Mosquitto) to handle message routing between the ESP32 and the backend server.
+
+** 3. Backend Server (Python)
+- **Framework**: Use a modern Python framework like FastAPI or Flask.
+- **MQTT Integration**: Use a library like `paho-mqtt` to subscribe to the MQTT broker and receive sensor data in real-time.
+- **Garbage Detection**: Integrate a computer vision model (e.g., YOLOv8 via OpenCV/PyTorch) to process the incoming camera feed and detect garbage.
+- **API/WebSockets**: Expose REST APIs for historical data and WebSockets for real-time sensor updates and the processed video feed (with bounding boxes for garbage).
+
+** 4. Frontend Web UI
+- **Technology**: HTML/CSS/JS (can be served directly by the Python backend) or a lightweight framework (like Vue.js or React).
+- **Features**: 
+  - A dashboard displaying real-time sensor readings (Turbidity, Water Level, pH, Temperature).
+  - A live video feed component showing the camera stream with garbage detection overlays.
+  - Communicates with the Python backend via WebSockets to ensure low latency.
