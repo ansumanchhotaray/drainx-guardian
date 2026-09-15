@@ -1,14 +1,12 @@
 #include <WiFi.h>
-#include <PubSubClient.h>
+#include <HTTPClient.h>
 
-// --- Network & MQTT Settings ---
+// --- Network Settings ---
 const char* ssid = "YOUR_LAPTOP_HOTSPOT_NAME";
 const char* password = "YOUR_HOTSPOT_PASSWORD";
-const char* mqtt_server = "192.168.137.1"; // Default Windows Hotspot IP
-const int mqtt_port = 1883;
 
-WiFiClient espClient;
-PubSubClient mqttClient(espClient);
+// The IP address of your Windows laptop running the Python server
+const char* serverName = "http://192.168.137.1:8000/api/sensors"; 
 
 // --- Sensor Pins (Using ADC1 pins which are safe with Wi-Fi) ---
 #define TURBIDITY_PIN 32
@@ -21,24 +19,6 @@ unsigned long lastSensorPublish = 0;
 
 // pH Calibration
 float ph_calibration_value = 13.59;
-
-void reconnectMQTT() {
-  while (!mqttClient.connected()) {
-    Serial.print("Connecting to Laptop MQTT Broker...");
-    
-    if (mqttClient.connect("ESP32_Sensor_Node")) {
-      Serial.println(" Connected!");
-      
-      String statusPayload = "{\"status\":\"online\",\"ip\":\"" + WiFi.localIP().toString() + "\"}";
-      mqttClient.publish("esp32/sensors/status", statusPayload.c_str());
-    } else {
-      Serial.print(" Failed (rc=");
-      Serial.print(mqttClient.state());
-      Serial.println("). Retrying in 3 seconds...");
-      delay(3000);
-    }
-  }
-}
 
 // --- Sensor Reading Functions ---
 
@@ -113,36 +93,46 @@ void setup() {
   Serial.println("\nWiFi Connected!");
   Serial.print("Sensor Node IP: ");
   Serial.println(WiFi.localIP());
-
-  // Configure MQTT
-  mqttClient.setServer(mqtt_server, mqtt_port);
 }
 
 void loop() {
-  if (!mqttClient.connected()) {
-    reconnectMQTT();
-  }
-  mqttClient.loop();
-
-  // Periodically read and push sensor readings via MQTT (every 2 seconds)
+  // Periodically read and push sensor readings via HTTP POST (every 2 seconds)
   unsigned long now = millis();
   if (now - lastSensorPublish > 2000) {
     lastSensorPublish = now;
 
-    float turbidity = readTurbidity();
-    float ph = readPH();
-    float distance = readUltrasonic();
-    float temperature = readTemperature();
+    if(WiFi.status() == WL_CONNECTED) {
+      float turbidity = readTurbidity();
+      float ph = readPH();
+      float distance = readUltrasonic();
+      float temperature = readTemperature();
 
-    // Construct JSON payload
-    String jsonPayload = "{";
-    jsonPayload += "\"turbidity\":" + String(turbidity) + ",";
-    jsonPayload += "\"ph\":" + String(ph) + ",";
-    jsonPayload += "\"water_level_cm\":" + String(distance) + ",";
-    jsonPayload += "\"temperature\":" + String(temperature);
-    jsonPayload += "}";
+      // Construct JSON payload
+      String jsonPayload = "{";
+      jsonPayload += "\"turbidity\":" + String(turbidity) + ",";
+      jsonPayload += "\"ph\":" + String(ph) + ",";
+      jsonPayload += "\"water_level_cm\":" + String(distance) + ",";
+      jsonPayload += "\"temperature\":" + String(temperature);
+      jsonPayload += "}";
 
-    mqttClient.publish("esp32/sensors", jsonPayload.c_str());
-    Serial.println("Pushed sensor payload: " + jsonPayload);
+      HTTPClient http;
+      http.begin(serverName);
+      http.addHeader("Content-Type", "application/json");
+      
+      int httpResponseCode = http.POST(jsonPayload);
+      
+      if (httpResponseCode > 0) {
+        Serial.print("HTTP Response code: ");
+        Serial.println(httpResponseCode);
+      } else {
+        Serial.print("Error code: ");
+        Serial.println(httpResponseCode);
+      }
+      http.end();
+      
+      Serial.println("Pushed sensor payload: " + jsonPayload);
+    } else {
+      Serial.println("WiFi Disconnected");
+    }
   }
 }

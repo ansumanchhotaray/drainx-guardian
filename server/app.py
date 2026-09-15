@@ -1,17 +1,11 @@
 import json
 import asyncio
-import paho.mqtt.client as mqtt
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from typing import List
 
 app = FastAPI()
-
-# --- MQTT Setup ---
-MQTT_BROKER = "127.0.0.1" # Assuming the broker is running on the same laptop
-MQTT_PORT = 1883
-MQTT_TOPIC = "esp32/sensors"
 
 latest_sensor_data = {
     "turbidity": 0.0,
@@ -42,36 +36,6 @@ class ConnectionManager:
 
 manager = ConnectionManager()
 
-def on_connect(client, userdata, flags, rc):
-    print(f"Connected to MQTT Broker with result code {rc}")
-    client.subscribe(MQTT_TOPIC)
-
-def on_message(client, userdata, msg):
-    global latest_sensor_data
-    try:
-        payload = msg.payload.decode()
-        data = json.loads(payload)
-        latest_sensor_data.update(data)
-        print(f"Received MQTT data: {latest_sensor_data}")
-        
-        # Broadcast to all connected websockets
-        # We need to run this in the asyncio event loop
-        try:
-            loop = asyncio.get_running_loop()
-            loop.create_task(manager.broadcast(latest_sensor_data))
-        except RuntimeError:
-            pass # No running loop, probably during startup
-    except Exception as e:
-        print(f"Error processing MQTT message: {e}")
-
-mqtt_client = mqtt.Client()
-mqtt_client.on_connect = on_connect
-mqtt_client.on_message = on_message
-
-# Start MQTT loop in background
-mqtt_client.connect_async(MQTT_BROKER, MQTT_PORT, 60)
-mqtt_client.loop_start()
-
 # --- FastAPI Routes ---
 
 # Mount static files (CSS, JS, Images)
@@ -80,6 +44,22 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 @app.get("/")
 async def get_index():
     return FileResponse("static/index.html")
+
+# NEW: Direct HTTP endpoint for the ESP32 to send data to
+@app.post("/api/sensors")
+async def receive_sensor_data(request: Request):
+    global latest_sensor_data
+    try:
+        data = await request.json()
+        latest_sensor_data.update(data)
+        print(f"Received data from ESP32: {latest_sensor_data}")
+        
+        # Broadcast the new data to the frontend dashboard
+        await manager.broadcast(latest_sensor_data)
+        return {"status": "success"}
+    except Exception as e:
+        print(f"Error processing sensor data: {e}")
+        return {"status": "error", "message": str(e)}
 
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
@@ -93,4 +73,5 @@ async def websocket_endpoint(websocket: WebSocket):
 
 if __name__ == "__main__":
     import uvicorn
+    # Run the server on all network interfaces so the ESP32 can reach it
     uvicorn.run(app, host="0.0.0.0", port=8000)

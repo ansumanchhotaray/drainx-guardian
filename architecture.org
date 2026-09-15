@@ -39,20 +39,21 @@ To overcome the ESP32-CAM's hardware limitations (specifically the conflict betw
   - Temperature: GPIO 34
   - Ultrasonic Trig: GPIO 5
   - Ultrasonic Echo: GPIO 18
-- **Software**: Runs `Guardian/SensorNode.ino`. Connects to the Wi-Fi hotspot, reads sensors every 2 seconds, and publishes a JSON payload to the `esp32/sensors` MQTT topic.
+- **Software**: Runs `Guardian/SensorNode.ino`. Connects to the Wi-Fi hotspot, reads sensors every 2 seconds, and sends a JSON payload directly to the Python backend via an HTTP POST request.
+
 ** 2. Controller Laptop (Central Hub)
 - **Network**: Runs a Wi-Fi Mobile Hotspot to host the local network.
-- **MQTT Broker**: Runs an MQTT broker (like Eclipse Mosquitto) to handle message routing between the ESP32 and the backend server.
+- **Backend Server**: Runs the Python FastAPI server which receives data directly from the ESP32.
 
 ** 3. Backend Server (Python)
-- **Framework**: Use a modern Python framework like FastAPI or Flask.
-- **MQTT Integration**: Use a library like `paho-mqtt` to subscribe to the MQTT broker and receive sensor data in real-time.
+- **Framework**: FastAPI.
+- **Data Ingestion**: Exposes an HTTP POST endpoint (`/api/sensors`) that the ESP32 WROOM calls to submit sensor data. This completely removes the need for an external MQTT broker.
 - **Garbage Detection**: Integrate a computer vision model (e.g., YOLOv8 via OpenCV/PyTorch) to process the incoming camera feed and detect garbage.
-- **API/WebSockets**: Expose REST APIs for historical data and WebSockets for real-time sensor updates and the processed video feed (with bounding boxes for garbage).
+- **WebSockets**: Broadcasts the received sensor data in real-time to the frontend dashboard.
 
 ** 4. Frontend Web UI
-- **Technology**: HTML/CSS/JS (can be served directly by the Python backend) or a lightweight framework (like Vue.js or React).
+- **Technology**: HTML/CSS/JS served directly by the FastAPI backend.
 - **Features**: 
-  - A dashboard displaying real-time sensor readings (Turbidity, Water Level, pH, Temperature).
-  - A live video feed component showing the camera stream with garbage detection overlays.
-  - Communicates with the Python backend via WebSockets to ensure low latency.
+  - A modern, glassmorphic dashboard displaying real-time sensor readings (Turbidity, Water Level, pH, Temperature).
+  - A live video feed component showing the camera stream (with future garbage detection overlays).
+  - Communicates with the Python backend via WebSockets to ensure zero-latency updates.
