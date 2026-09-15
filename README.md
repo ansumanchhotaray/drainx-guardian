@@ -34,6 +34,8 @@ Make sure you have Python 3.8+ installed.
 Open a terminal in the project directory and run:
 ```bash
 cd server
+python -m venv .venv
+source .venv/bin/activate  # On Windows use: .venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
@@ -44,6 +46,12 @@ python app.py
 ```
 
 The server will start on `http://0.0.0.0:8000`.
+
+### Running the Local Webcam Demo
+If you want to test the YOLOv8 garbage detection locally using your laptop's webcam, run:
+```bash
+python webcam_demo.py
+```
 
 ## 3. Viewing the Dashboard
 
