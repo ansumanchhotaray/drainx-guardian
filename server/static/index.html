@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DrainX Guardian Dashboard</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <div class="background-blobs">
+        <div class="blob blob-1"></div>
+        <div class="blob blob-2"></div>
+    </div>
+
+    <div class="container">
+        <header>
+            <div class="logo">
+                <h1>DrainX <span>Guardian</span></h1>
+                <div class="status-indicator">
+                    <div class="dot pulse"></div>
+                    <span>System Online</span>
+                </div>
+            </div>
+            <p class="subtitle">Real-time Autonomous Drainage Monitoring</p>
+        </header>
+
+        <main class="dashboard">
+            <!-- Video Feed Section -->
+            <section class="video-section glass-panel">
+                <div class="panel-header">
+                    <h2>Live Camera Feed</h2>
+                    <span class="badge">AI Vision Active</span>
+                </div>
+                <div class="video-container">
+                    <!-- Replace the src with your ESP32-CAM IP when running -->
+                    <img id="camera-stream" src="https://via.placeholder.com/640x480.png?text=Waiting+for+Camera+Stream..." alt="Live Stream">
+                    <div class="overlay-ui">
+                        <div class="target-box"></div>
+                    </div>
+                </div>
+                <div class="controls">
+                    <input type="text" id="cam-ip" placeholder="ESP32-CAM IP (e.g. 192.168.137.x)" class="glass-input">
+                    <button id="connect-cam" class="btn-primary">Connect Stream</button>
+                </div>
+            </section>
+
+            <!-- Sensors Section -->
+            <section class="sensors-section">
+                <div class="sensor-grid">
+                    
+                    <!-- Turbidity Card -->
+                    <div class="sensor-card glass-panel" id="card-turbidity">
+                        <div class="sensor-icon">🌊</div>
+                        <div class="sensor-info">
+                            <h3>Turbidity</h3>
+                            <div class="value-container">
+                                <span class="value" id="val-turbidity">--</span>
+                                <span class="unit">NTU</span>
+                            </div>
+                            <div class="progress-bar">
+                                <div class="progress-fill" id="prog-turbidity" style="width: 0%;"></div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- pH Card -->
+                    <div class="sensor-card glass-panel" id="card-ph">
+                        <div class="sensor-icon">🧪</div>
+                        <div class="sensor-info">
+                            <h3>pH Level</h3>
+                            <div class="value-container">
+                                <span class="value" id="val-ph">--</span>
+                                <span class="unit">pH</span>
+                            </div>
+                            <div class="progress-bar">
+                                <div class="progress-fill" id="prog-ph" style="width: 0%;"></div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Water Level Card -->
+                    <div class="sensor-card glass-panel" id="card-water">
+                        <div class="sensor-icon">📏</div>
+                        <div class="sensor-info">
+                            <h3>Water Level</h3>
+                            <div class="value-container">
+                                <span class="value" id="val-water">--</span>
+                                <span class="unit">cm</span>
+                            </div>
+                            <div class="progress-bar">
+                                <div class="progress-fill" id="prog-water" style="width: 0%;"></div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Temperature Card -->
+                    <div class="sensor-card glass-panel" id="card-temp">
+                        <div class="sensor-icon">🌡️</div>
+                        <div class="sensor-info">
+                            <h3>Temperature</h3>
+                            <div class="value-container">
+                                <span class="value" id="val-temp">--</span>
+                                <span class="unit">°C</span>
+                            </div>
+                            <div class="progress-bar">
+                                <div class="progress-fill" id="prog-temp" style="width: 0%;"></div>
+                            </div>
+                        </div>
+                    </div>
+
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <script src="/static/script.js"></script>
+</body>
+</html>
