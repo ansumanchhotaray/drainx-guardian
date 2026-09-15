@@ -1,13 +1,14 @@
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from typing import List
+import vision
+import asyncio
+import time
 
 app = FastAPI()
 
-# Allow all origins — needed so the browser dashboard can call back to the server
-# and so the ESP32 (a different IP on the hotspot) can POST without CORS blocks.
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -29,11 +30,11 @@ class ConnectionManager:
     async def connect(self, websocket: WebSocket):
         await websocket.accept()
         self.active_connections.append(websocket)
-        # Send the latest cached data immediately on connection
         await websocket.send_json(latest_sensor_data)
 
     def disconnect(self, websocket: WebSocket):
-        self.active_connections.remove(websocket)
+        if websocket in self.active_connections:
+            self.active_connections.remove(websocket)
 
     async def broadcast(self, message: dict):
         dead = []
@@ -55,6 +56,38 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 async def get_index():
     return FileResponse("static/index.html")
 
+# --- Set the ESP32-CAM stream URL ---
+@app.post("/api/camera")
+async def set_camera(request: Request):
+    """
+    Called by the frontend when the user enters the ESP32-CAM IP.
+    Body: { "url": "http://192.168.x.x:81/stream" }
+    """
+    body = await request.json()
+    url = body.get("url", "").strip()
+    if not url:
+        return {"status": "error", "message": "url is required"}
+    vision.set_camera_url(url)
+    return {"status": "ok", "url": url}
+
+# --- Processed MJPEG video feed (annotated with garbage detection boxes) ---
+async def _frame_generator():
+    """Async generator that yields MJPEG boundary-delimited frames."""
+    boundary = b"--frame\r\n"
+    header = b"Content-Type: image/jpeg\r\n\r\n"
+    while True:
+        frame = vision.get_latest_frame()
+        if frame:
+            yield boundary + header + frame + b"\r\n"
+        await asyncio.sleep(0.04)  # ~25 fps max
+
+@app.get("/video_feed")
+async def video_feed():
+    return StreamingResponse(
+        _frame_generator(),
+        media_type="multipart/x-mixed-replace; boundary=frame"
+    )
+
 # --- Sensor data endpoint (called by ESP32 WROOM every 2 seconds) ---
 @app.post("/api/sensors")
 async def receive_sensor_data(request: Request):
@@ -75,7 +108,7 @@ async def websocket_endpoint(websocket: WebSocket):
     await manager.connect(websocket)
     try:
         while True:
-            await websocket.receive_text()  # Keep connection alive
+            await websocket.receive_text()
     except WebSocketDisconnect:
         manager.disconnect(websocket)
 

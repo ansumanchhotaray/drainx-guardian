@@ -103,20 +103,40 @@ document.addEventListener('DOMContentLoaded', () => {
     const ipInput = document.getElementById('cam-ip');
     const camStream = document.getElementById('camera-stream');
 
-    connectBtn.addEventListener('click', () => {
+    connectBtn.addEventListener('click', async () => {
         const ip = ipInput.value.trim();
-        if (ip) {
-            // ESP32-CAM MJPEG stream URL
-            const streamUrl = `http://${ip}:81/stream`;
-            camStream.src = streamUrl;
-            camStream.onerror = () => {
-                alert("Could not connect to camera stream. Check the IP and ensure you are on the same network.");
-                camStream.src = "https://via.placeholder.com/640x480.png?text=Connection+Failed";
-            };
-            // Show AI target box for aesthetic
-            document.querySelector('.target-box').style.display = 'block';
-        } else {
+        if (!ip) {
             alert("Please enter the ESP32-CAM IP address.");
+            return;
         }
+
+        const rawStreamUrl = `http://${ip}:81/stream`;
+        connectBtn.textContent = 'Connecting...';
+        connectBtn.disabled = true;
+
+        try {
+            // Tell the Python backend to start pulling & processing the stream
+            const resp = await fetch('/api/camera', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ url: rawStreamUrl })
+            });
+            const data = await resp.json();
+
+            if (data.status === 'ok') {
+                // Point the img tag at the server's processed MJPEG feed
+                // (annotated with red garbage-detection boxes by YOLOv8)
+                camStream.src = `/video_feed?t=${Date.now()}`;
+                document.querySelector('.target-box').style.display = 'block';
+                connectBtn.textContent = 'Reconnect';
+            } else {
+                alert(`Server error: ${data.message}`);
+                connectBtn.textContent = 'Connect Stream';
+            }
+        } catch (e) {
+            alert("Could not reach the Python server. Is it running?");
+            connectBtn.textContent = 'Connect Stream';
+        }
+        connectBtn.disabled = false;
     });
 });
