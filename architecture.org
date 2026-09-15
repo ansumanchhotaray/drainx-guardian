@@ -26,8 +26,9 @@ To overcome the ESP32-CAM's hardware limitations (specifically the conflict betw
 
 *** A. Camera Node (ESP32-CAM)
 - **Role**: Dedicated exclusively to video streaming.
-- **Software**: Runs `Guardian/CameraNode.ino`. Connects to the Wi-Fi hotspot and hosts an HTTP video stream on port 81.
+- **Software**: Runs `Guardian/CameraNode.ino`. Connects to the Wi-Fi hotspot and hosts an **MJPEG-over-HTTP stream** on port 81 (`/stream`). This uses a persistent HTTP connection with `Content-Type: multipart/x-mixed-replace`, which continuously pushes JPEG frames without ever closing the connection.
 - **Hardware**: AI Thinker ESP32-CAM module.
+- **Note**: The Python backend *pulls* from this MJPEG stream, processes each frame for garbage detection, then re-serves the annotated video to the frontend via its own `/video_feed` endpoint.
 
 *** B. Sensor Node (ESP32 WROOM)
 - **Role**: Reads all environmental sensors and sends data via HTTP POST directly to the backend.
@@ -47,12 +48,21 @@ To overcome the ESP32-CAM's hardware limitations (specifically the conflict betw
 ** 3. Backend Server (Python)
 - **Framework**: FastAPI.
 - **Data Ingestion**: Exposes an HTTP POST endpoint (`/api/sensors`) that the ESP32 WROOM calls to submit sensor data. This completely removes the need for an external MQTT broker.
-- **Garbage Detection**: Integrate a computer vision model (e.g., YOLOv8 via OpenCV/PyTorch) to process the incoming camera feed and detect garbage.
-- **WebSockets**: Broadcasts the received sensor data in real-time to the frontend dashboard.
+- **Camera URL Registration**: Exposes an HTTP POST endpoint (`/api/camera`) that the frontend calls once to tell the backend the ESP32-CAM's MJPEG stream URL.
+- **Video Proxying & Garbage Detection**: A background thread in `vision.py` pulls from the ESP32-CAM's MJPEG stream, runs garbage detection on each frame, and stores the latest annotated frame in memory. The `/video_feed` GET endpoint then re-serves this as a new MJPEG stream to the browser.
+- **WebSockets**: Broadcasts the received sensor data in real-time to the frontend dashboard via the `/ws` endpoint.
 
 ** 4. Frontend Web UI
-- **Technology**: HTML/CSS/JS served directly by the FastAPI backend.
-- **Features**: 
+- **Technology**: HTML/CSS/JS served directly by the FastAPI backend (from `/static`).
+- **Features**:
   - A modern, glassmorphic dashboard displaying real-time sensor readings (Turbidity, Water Level, pH, Temperature).
-  - A live video feed component showing the camera stream (with future garbage detection overlays).
-  - Communicates with the Python backend via WebSockets to ensure zero-latency updates.
+  - A "Connect Stream" input where the user enters the ESP32-CAM's local IP. The frontend POSTs this URL to `/api/camera`, after which the backend begins pulling and processing the stream.
+  - A live video feed `<img>` element pointed at the backend's `/video_feed` endpoint, which displays the MJPEG stream with garbage detection overlays.
+  - Communicates with the Python backend via WebSockets (`/ws`) for zero-latency sensor data updates.
+
+** 5. Full Data Flow Summary
+#+BEGIN_SRC
+ESP32 WROOM  ---(HTTP POST /api/sensors)---> FastAPI Backend ---(WebSocket /ws)---> Browser Dashboard
+ESP32-CAM    ---(MJPEG stream :81/stream)--> vision.py thread --> /video_feed   ---> Browser <img> tag
+Frontend     ---(HTTP POST /api/camera)----> FastAPI Backend  (registers the CAM URL, triggers vision.py)
+#+END_SRC

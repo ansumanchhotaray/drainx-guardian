@@ -5,8 +5,10 @@
 const char* ssid = "YOUR_LAPTOP_HOTSPOT_NAME";
 const char* password = "YOUR_HOTSPOT_PASSWORD";
 
-// The IP address of your Windows laptop running the Python server
-const char* serverName = "http://192.168.137.1:8000/api/sensors"; 
+// The IP address of your laptop running the Python server.
+// Default below is the Windows Mobile Hotspot gateway IP.
+// On Linux/Mac, replace this with your actual hotspot/network IP (check with `ip addr` or `ifconfig`).
+const char* serverName = "http://192.168.137.1:8000/api/sensors";
 
 // --- Sensor Pins (Using ADC1 pins which are safe with Wi-Fi) ---
 #define TURBIDITY_PIN 32
