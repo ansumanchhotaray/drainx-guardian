@@ -22,19 +22,24 @@ level), and ph sensor, and also temperature sensor.
 
 * Extended Architecture & Integration Plan
 
-** 1. ESP32 Subsystem (Sensor Node)
-- **Sensors**: Camera (ESP32-CAM), Turbidity, Ultrasonic, pH, and Temperature.
-- **Hardware Integration & Limitations**: 
-  - The ESP32-CAM has limited available GPIO pins because most are used by the camera and SD card.
-  - The integrated code in `Guardian/Main.ino` assigns the following pins:
-    - Turbidity: GPIO 13
-    - pH: GPIO 14
-    - Temperature: GPIO 15
-    - Ultrasonic Trig: GPIO 12
-    - Ultrasonic Echo: GPIO 16
-  - **Important Limitation**: GPIOs 12, 13, 14, and 15 belong to ADC2. On the ESP32, ADC2 cannot be used for `analogRead()` while Wi-Fi is active. Because the device streams video and sends MQTT messages over Wi-Fi, reading analog sensors directly on these pins will fail or return invalid data.
-  - **Recommended Solution**: To reliably read analog sensors (Turbidity, pH, Temperature) alongside Wi-Fi and Camera, use an external I2C ADC (like the ADS1115) connected to the ESP32-CAM's I2C pins, or use a separate standard ESP32 board dedicated to sensors that communicates with the ESP32-CAM or directly to the MQTT broker.
-- **Software**: The integrated `Guardian/Main.ino` sketch combines the camera streaming and sensor reading logic. It streams video over HTTP (port 81) and periodically publishes a combined JSON payload of all sensor readings to the `esp32/sensors` MQTT topic.
+** 1. Microcontroller Subsystem (Two-Board Architecture)
+To overcome the ESP32-CAM's hardware limitations (specifically the conflict between Wi-Fi and ADC2 pins), the system uses two separate ESP32 boards:
+
+*** A. Camera Node (ESP32-CAM)
+- **Role**: Dedicated exclusively to video streaming.
+- **Software**: Runs `Guardian/CameraNode.ino`. Connects to the Wi-Fi hotspot and hosts an HTTP video stream on port 81.
+- **Hardware**: AI Thinker ESP32-CAM module.
+
+*** B. Sensor Node (ESP32 WROOM)
+- **Role**: Reads all environmental sensors and publishes data via MQTT.
+- **Sensors**: Turbidity, Ultrasonic, pH, and Temperature.
+- **Hardware Integration**: Uses ADC1 pins (which are safe to use alongside Wi-Fi) for analog sensors.
+  - Turbidity: GPIO 32
+  - pH: GPIO 33
+  - Temperature: GPIO 34
+  - Ultrasonic Trig: GPIO 5
+  - Ultrasonic Echo: GPIO 18
+- **Software**: Runs `Guardian/SensorNode.ino`. Connects to the Wi-Fi hotspot, reads sensors every 2 seconds, and publishes a JSON payload to the `esp32/sensors` MQTT topic.
 ** 2. Controller Laptop (Central Hub)
 - **Network**: Runs a Wi-Fi Mobile Hotspot to host the local network.
 - **MQTT Broker**: Runs an MQTT broker (like Eclipse Mosquitto) to handle message routing between the ESP32 and the backend server.
