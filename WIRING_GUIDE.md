@@ -14,7 +14,7 @@ The ESP32-CAM is dedicated entirely to streaming video.
 ---
 
 ## 2. Sensor Node (ESP32 WROOM)
-The ESP32 WROOM reads all the sensors and sends the data via MQTT.
+The ESP32 WROOM reads all the sensors and sends the data directly to the Python server via HTTP POST.
 - **Code**: Upload `Guardian/SensorNode.ino` to this board.
 - **Wiring**: We will use the **ADC1** pins on the ESP32 WROOM, which work perfectly even when Wi-Fi is turned on.
 

@@ -1,15 +1,14 @@
 I have this architecture in mind for the project.
 
-There would be an MQTT client on the ESP32 module (which will have all
-the sensors connected to it) that pushes sensor data whenever readings
+There would be an HTTP client on the ESP32 module (which will have all
+the sensors connected to it) that pushes sensor data via HTTP POST whenever readings
 are taken.
 
 The controller laptop will run a Wi-Fi Mobile Hotspot to provide a
-constant local IP address for the ESP32, alongside an MQTT broker to
-receive the incoming data.
+constant local IP address for the ESP32.
 
-There would be a web server on the laptop that receives the data from
-the broker and displays it on its own website UI interface.
+There would be a Python FastAPI web server on the laptop that receives the data directly from
+the ESP32 and displays it on its own website UI interface.
 
 It should also detect the garbage in the camera feed since this is for
 this device which can detect garbage and clean but we don't have the
