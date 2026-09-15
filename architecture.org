@@ -14,7 +14,7 @@ It should also detect the garbage in the camera feed since this is for
 this device which can detect garbage and clean but we don't have the
 cleaning mechanism yet, so we will just display the things.
 
-We also have not much idea of how to connect the sensors at once.
+The sensor connection approach is now documented in `WIRING_GUIDE.md`.
 
 We have camera sensor, turbidity sensor, ultrasonic sensor (for water
 level), and ph sensor, and also temperature sensor.
@@ -30,7 +30,7 @@ To overcome the ESP32-CAM's hardware limitations (specifically the conflict betw
 - **Hardware**: AI Thinker ESP32-CAM module.
 
 *** B. Sensor Node (ESP32 WROOM)
-- **Role**: Reads all environmental sensors and publishes data via MQTT.
+- **Role**: Reads all environmental sensors and sends data via HTTP POST directly to the backend.
 - **Sensors**: Turbidity, Ultrasonic, pH, and Temperature.
 - **Hardware Integration**: Uses ADC1 pins (which are safe to use alongside Wi-Fi) for analog sensors.
   - Turbidity: GPIO 32

@@ -1,4 +1,4 @@
-#include "esp_camera.h"
+#include <esp_camera.h>
 #include <WiFi.h>
 
 // --- Network Settings ---
