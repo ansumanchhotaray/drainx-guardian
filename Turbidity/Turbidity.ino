@@ -1,5 +1,3 @@
-// #include <LiquidCrystal.h>
-
 
 #define BLYNK_TEMPLATE_ID "TMPL3B_hQEFdF"
 #define BLYNK_TEMPLATE_NAME "Turbidity"
@@ -8,22 +6,23 @@
 #include <WiFi.h>
 #include <WiFiClient.h>
 #include <BlynkSimpleEsp32.h>
-// #include <LiquidCrystal_I2C.h>
-// LiquidCrystal_I2C lcd(0x27, 16, 2);
+#include <LiquidCrystal_I2C.h>
+LiquidCrystal_I2C lcd(0x27, 16, 2);
 
 #define TURBIDITY_PIN 34  
 
 BlynkTimer timer;
 
 char auth[] = BLYNK_AUTH_TOKEN;
-char ssid[] = "Capasitor_Tech";
-char pass[] = "Kopisusu26";
+
+char ssid[] = "moto g96 5G_4551";
+char pass[] = "indumahi09";
 
 void setup() {
   Serial.begin(115200);       
   analogReadResolution(12);   
-  // lcd.begin();
-  // lcd.backlight();
+  lcd.init();
+  lcd.backlight();
   Blynk.begin(auth, ssid, pass);
   timer.setInterval(500L, Turbidity);
 }
@@ -36,28 +35,28 @@ void loop()
 
 void Turbidity() {
   int turbidityValue = analogRead(TURBIDITY_PIN);
-  int kal = (turbidityValue - 2717.6) / -18.189;
+  int Calibration = (turbidityValue - 2717.6) / -18.189;
   String status;
   Serial.print("Turbidity ADC Value: ");
   Serial.print(turbidityValue);
-  Serial.print(" | KAL: ");
-  Serial.print(kal);
-  Blynk.virtualWrite(V0, kal);
-  if(kal > 0 && kal < 49)
+  Serial.print(" | Calibration: ");
+  Serial.println(Calibration);
+  Blynk.virtualWrite(V2, Calibration);
+  if(Calibration >= 0 && Calibration <= 49)
   {
-    status = "Air Jernih";
-  } else if (kal > 50 && kal < 75){
-    status = "Keruh";
-  } else if (kal > 76 && kal < 150){
-    status = "Sangat Keruh";
+    status = "Clear Water";
+  } else if (Calibration >= 50 && Calibration <= 75){
+    status = "Turbid";
+  } else if (Calibration >= 76 && Calibration <= 150){
+    status = "Very Turbid";
   }
   Blynk.virtualWrite(V1, status);
-  // lcd.setCursor(0, 0);
-  // lcd.print("Nilai = ");
-  // lcd.print(kal);
-  // lcd.print("       ");
-  // lcd.setCursor(0, 1);
-  // lcd.print(status);
-  // lcd.print("        ");
+  lcd.setCursor(0, 0);
+  lcd.print("Value = ");
+  lcd.print(Calibration);
+  lcd.print("       ");
+  lcd.setCursor(0, 1);
+  lcd.print(status);
+  lcd.print("        ");
 }
 
