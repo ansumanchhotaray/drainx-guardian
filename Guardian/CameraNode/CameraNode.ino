@@ -2,10 +2,10 @@
 #include <WiFi.h>
 
 // --- Network Settings ---
-const char* ssid = "YOUR_LAPTOP_HOTSPOT_NAME";
-const char* password = "YOUR_HOTSPOT_PASSWORD";
+const char* ssid = "CMF by Nothing Phone 2 Pro";
+const char* password = "12345678";
 
-WiFiServer streamServer(81);
+WiFiServer server(80);
 
 // --- AI Thinker ESP32-CAM Pins ---
 #define PWDN_GPIO_NUM    32
@@ -46,8 +46,8 @@ void startCamera() {
   config.pin_vsync = VSYNC_GPIO_NUM;
   config.pin_href = HREF_GPIO_NUM;
 
-  config.pin_sscb_sda = SIOD_GPIO_NUM;
-  config.pin_sscb_scl = SIOC_GPIO_NUM;
+  config.pin_sccb_sda = SIOD_GPIO_NUM;
+  config.pin_sccb_scl = SIOC_GPIO_NUM;
 
   config.pin_pwdn = PWDN_GPIO_NUM;
   config.pin_reset = RESET_GPIO_NUM;
@@ -57,8 +57,9 @@ void startCamera() {
 
   config.frame_size = FRAMESIZE_QVGA;   // 320x240
   config.jpeg_quality = 12;
-  config.fb_count = 1;
+  config.fb_count = 2;
   config.grab_mode = CAMERA_GRAB_LATEST;
+  config.fb_location = CAMERA_FB_IN_PSRAM;
 
   esp_err_t err = esp_camera_init(&config);
   if (err != ESP_OK) {
@@ -68,39 +69,70 @@ void startCamera() {
   Serial.println("Camera Ready");
 }
 
-void streamVideo() {
-  WiFiClient client = streamServer.available();
+void handleClient() {
+  WiFiClient client = server.available();
   if (!client) return;
 
-  Serial.println("Stream Client Connected");
-
-  client.println("HTTP/1.1 200 OK");
-  client.println("Content-Type: multipart/x-mixed-replace; boundary=frame");
-  client.println();
-
-  while (client.connected()) {
-    camera_fb_t *fb = esp_camera_fb_get();
-    if (!fb) {
-      Serial.println("Capture Failed");
-      continue;
-    }
-
-    client.printf("--frame\r\n");
-    client.printf("Content-Type: image/jpeg\r\n");
-    client.printf("Content-Length: %u\r\n\r\n", fb->len);
-    client.write(fb->buf, fb->len);
-    client.printf("\r\n");
-
-    esp_camera_fb_return(fb);
-    delay(30);
+  // Wait for data with a timeout
+  unsigned long timeout = millis() + 3000;
+  while (!client.available() && millis() < timeout) {
+    delay(1);
+  }
+  if (!client.available()) {
+    client.stop();
+    return;
   }
 
-  Serial.println("Stream Client Disconnected");
+  // Read the first line of the HTTP request
+  String request = client.readStringUntil('\r');
+  client.readStringUntil('\n');
+  // Consume remaining headers
+  while (client.available()) {
+    String line = client.readStringUntil('\n');
+    if (line.length() <= 1) break;  // Empty line = end of headers
+  }
+
+  if (request.indexOf("GET /capture") >= 0) {
+    // --- Serve a single JPEG snapshot ---
+    camera_fb_t *fb = esp_camera_fb_get();
+    if (!fb) {
+      client.println("HTTP/1.1 500 Internal Server Error");
+      client.println("Access-Control-Allow-Origin: *");
+      client.println("Connection: close");
+      client.println();
+      client.stop();
+      Serial.println("Capture Failed");
+      return;
+    }
+
+    client.println("HTTP/1.1 200 OK");
+    client.println("Content-Type: image/jpeg");
+    client.println("Access-Control-Allow-Origin: *");
+    client.printf("Content-Length: %u\r\n", fb->len);
+    client.println("Connection: close");
+    client.println();
+    client.write(fb->buf, fb->len);
+
+    esp_camera_fb_return(fb);
+    Serial.println("Snapshot served");
+  } else {
+    // --- Simple status page for any other request ---
+    String body = "{\"status\":\"ok\",\"endpoints\":[\"/capture\"]}";
+    client.println("HTTP/1.1 200 OK");
+    client.println("Content-Type: application/json");
+    client.println("Access-Control-Allow-Origin: *");
+    client.printf("Content-Length: %u\r\n", body.length());
+    client.println("Connection: close");
+    client.println();
+    client.print(body);
+  }
+
+  client.stop();
 }
 
-void streamTask(void *pvParameters) {
+void serverTask(void *pvParameters) {
   while (true) {
-    streamVideo();
+    handleClient();
     vTaskDelay(1);
   }
 }
@@ -113,23 +145,24 @@ void setup() {
 
   // Connect to Laptop Wi-Fi Hotspot
   WiFi.begin(ssid, password);
+  WiFi.setSleep(false);
   Serial.print("Connecting to Laptop Hotspot");
   while (WiFi.status() != WL_CONNECTED) {
     delay(500);
     Serial.print(".");
   }
   Serial.println("\nWiFi Connected!");
-  Serial.print("Camera Stream IP: http://");
+  Serial.print("Camera Snapshot URL: http://");
   Serial.print(WiFi.localIP());
-  Serial.println(":81/stream");
+  Serial.println("/capture");
 
-  // Start Video Stream Server on Port 81
-  streamServer.begin();
+  // Start HTTP Server on Port 80
+  server.begin();
 
-  // Pin Video Streaming task to Core 0
+  // Pin server task to Core 0
   xTaskCreatePinnedToCore(
-    streamTask,
-    "streamTask",
+    serverTask,
+    "serverTask",
     8192,
     NULL,
     1,
@@ -139,6 +172,6 @@ void setup() {
 }
 
 void loop() {
-  // Camera stream is handled in streamTask
+  // HTTP server is handled in serverTask
   delay(1000);
 }

@@ -56,12 +56,12 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 async def get_index():
     return FileResponse("static/index.html")
 
-# --- Set the ESP32-CAM stream URL ---
+# --- Set the ESP32-CAM snapshot URL ---
 @app.post("/api/camera")
 async def set_camera(request: Request):
     """
     Called by the frontend when the user enters the ESP32-CAM IP.
-    Body: { "url": "http://192.168.x.x:81/stream" }
+    Body: { "url": "http://192.168.x.x/capture" }
     """
     body = await request.json()
     url = body.get("url", "").strip()

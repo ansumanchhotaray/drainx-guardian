@@ -110,16 +110,16 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
-        const rawStreamUrl = `http://${ip}:81/stream`;
+        const snapshotUrl = `http://${ip}/capture`;
         connectBtn.textContent = 'Connecting...';
         connectBtn.disabled = true;
 
         try {
-            // Tell the Python backend to start pulling & processing the stream
+            // Tell the Python backend to start polling snapshots & running YOLO
             const resp = await fetch('/api/camera', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ url: rawStreamUrl })
+                body: JSON.stringify({ url: snapshotUrl })
             });
             const data = await resp.json();
 

@@ -45,11 +45,59 @@ _running = False
 _thread: threading.Thread = None
 
 
-def _process_stream():
-    """Background thread: pulls ESP32-CAM MJPEG, runs YOLO, stores annotated frame."""
+def _annotate_frame(frame):
+    """Run YOLO on a frame and draw bounding boxes for garbage detections."""
+    model = get_model()
+    results = model(frame, verbose=False)[0]
+
+    garbage_found = False
+    for box in results.boxes:
+        cls_id = int(box.cls[0])
+        conf = float(box.conf[0])
+
+        if cls_id in GARBAGE_CLASSES and conf > 0.35:
+            garbage_found = True
+            x1, y1, x2, y2 = map(int, box.xyxy[0])
+            label = f"{GARBAGE_CLASSES[cls_id]} {conf:.0%}"
+
+            # Solid red bounding box
+            cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 0, 220), 2)
+
+            # Label pill background
+            (tw, th), _ = cv2.getTextSize(
+                label, cv2.FONT_HERSHEY_SIMPLEX, 0.55, 1
+            )
+            cv2.rectangle(
+                frame,
+                (x1, y1 - th - 8),
+                (x1 + tw + 6, y1),
+                (0, 0, 220), -1
+            )
+            cv2.putText(
+                frame, label,
+                (x1 + 3, y1 - 4),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.55,
+                (255, 255, 255), 1, cv2.LINE_AA
+            )
+
+    # Optional: watermark when garbage is detected
+    if garbage_found:
+        cv2.putText(
+            frame, "GARBAGE DETECTED",
+            (10, frame.shape[0] - 10),
+            cv2.FONT_HERSHEY_SIMPLEX, 0.7,
+            (0, 0, 220), 2, cv2.LINE_AA
+        )
+
+    return frame
+
+
+def _poll_snapshots():
+    """Background thread: polls ESP32-CAM /capture endpoint, runs YOLO, stores annotated frame."""
     global _latest_frame, _running
 
-    model = get_model()
+    # Pre-load the model so the first frame isn't slow
+    get_model()
 
     while _running:
         url = _camera_url
@@ -58,91 +106,54 @@ def _process_stream():
             continue
 
         try:
-            print(f"[Vision] Connecting to stream: {url}")
-            response = requests.get(url, stream=True, timeout=10)
-            buf = b""
+            # Fetch a single JPEG snapshot from the ESP32-CAM
+            response = requests.get(url, timeout=5)
 
-            for chunk in response.iter_content(chunk_size=4096):
-                if not _running or _camera_url != url:
-                    break
-                buf += chunk
+            if response.status_code != 200:
+                print(f"[Vision] Snapshot request failed: HTTP {response.status_code}")
+                time.sleep(0.5)
+                continue
 
-                # JPEG frames are delimited by 0xFF 0xD8 ... 0xFF 0xD9
-                a = buf.find(b'\xff\xd8')
-                b = buf.find(b'\xff\xd9')
+            # Decode the JPEG image
+            jpg_data = response.content
+            frame = cv2.imdecode(
+                np.frombuffer(jpg_data, dtype=np.uint8),
+                cv2.IMREAD_COLOR
+            )
+            if frame is None:
+                print("[Vision] Failed to decode JPEG snapshot")
+                time.sleep(0.5)
+                continue
 
-                if a != -1 and b != -1 and b > a:
-                    jpg = buf[a:b + 2]
-                    buf = buf[b + 2:]
+            # Run YOLO inference and draw bounding boxes
+            frame = _annotate_frame(frame)
 
-                    frame = cv2.imdecode(
-                        np.frombuffer(jpg, dtype=np.uint8),
-                        cv2.IMREAD_COLOR
-                    )
-                    if frame is None:
-                        continue
+            # Encode the annotated frame back to JPEG
+            _, jpeg = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 85])
+            with _frame_lock:
+                _latest_frame = jpeg.tobytes()
 
-                    # --- Run YOLO inference ---
-                    results = model(frame, verbose=False)[0]
-
-                    garbage_found = False
-                    for box in results.boxes:
-                        cls_id = int(box.cls[0])
-                        conf = float(box.conf[0])
-
-                        if cls_id in GARBAGE_CLASSES and conf > 0.35:
-                            garbage_found = True
-                            x1, y1, x2, y2 = map(int, box.xyxy[0])
-                            label = f"{GARBAGE_CLASSES[cls_id]} {conf:.0%}"
-
-                            # Solid red bounding box
-                            cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 0, 220), 2)
-
-                            # Label pill background
-                            (tw, th), _ = cv2.getTextSize(
-                                label, cv2.FONT_HERSHEY_SIMPLEX, 0.55, 1
-                            )
-                            cv2.rectangle(
-                                frame,
-                                (x1, y1 - th - 8),
-                                (x1 + tw + 6, y1),
-                                (0, 0, 220), -1
-                            )
-                            cv2.putText(
-                                frame, label,
-                                (x1 + 3, y1 - 4),
-                                cv2.FONT_HERSHEY_SIMPLEX, 0.55,
-                                (255, 255, 255), 1, cv2.LINE_AA
-                            )
-
-                    # Optional: watermark when garbage is detected
-                    if garbage_found:
-                        cv2.putText(
-                            frame, "⚠ GARBAGE DETECTED",
-                            (10, frame.shape[0] - 10),
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.7,
-                            (0, 0, 220), 2, cv2.LINE_AA
-                        )
-
-                    _, jpeg = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
-                    with _frame_lock:
-                        _latest_frame = jpeg.tobytes()
-
-        except Exception as exc:
-            print(f"[Vision] Stream error: {exc}. Retrying in 3s...")
+        except requests.exceptions.ConnectionError:
+            print(f"[Vision] Cannot reach camera at {url}. Retrying in 3s...")
             time.sleep(3)
+        except requests.exceptions.Timeout:
+            print(f"[Vision] Snapshot request timed out. Retrying...")
+            time.sleep(1)
+        except Exception as exc:
+            print(f"[Vision] Error: {exc}. Retrying in 2s...")
+            time.sleep(2)
 
 
 def set_camera_url(url: str):
-    """Set (or update) the ESP32-CAM stream URL and start the processing thread."""
+    """Set (or update) the ESP32-CAM snapshot URL and start the processing thread."""
     global _camera_url, _running, _thread
     _camera_url = url
 
     if not _running:
         _running = True
-        _thread = threading.Thread(target=_process_stream, daemon=True)
+        _thread = threading.Thread(target=_poll_snapshots, daemon=True)
         _thread.start()
-        print(f"[Vision] Processing thread started.")
+        print(f"[Vision] Snapshot polling thread started for: {url}")
     else:
         print(f"[Vision] Camera URL updated to: {url}")
 
