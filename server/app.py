@@ -17,7 +17,9 @@ app.add_middleware(
 )
 
 latest_sensor_data = {
-    "turbidity": 0.0,
+    "turbidity": 0,
+    "turbidity_status": "Unknown",
+    "turbidity_class": "status-normal",
     "ph": 0.0,
     "temperature": 0.0
 }

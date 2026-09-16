@@ -23,9 +23,9 @@ float ph_calibration_value = 13.59;
 
 // --- Sensor Reading Functions ---
 
-float readTurbidity() {
+int readTurbidity() {
   int turbidityValue = analogRead(TURBIDITY_PIN);
-  float calibration = (turbidityValue - 2717.6) / -18.189;
+  int calibration = (turbidityValue - 2717.6) / -18.189;
   return calibration;
 }
 
@@ -92,13 +92,28 @@ void setup() {
 
   // Setup Web Server Endpoints
   server.on("/sensors", []() {
-    float turbidity = readTurbidity();
+    int turbidity = readTurbidity();
+    String turbidityStatus = "Unknown";
+    String turbidityClass = "status-normal";
+    if(turbidity >= 0 && turbidity <= 49) {
+      turbidityStatus = "Clear Water";
+      turbidityClass = "status-normal";
+    } else if (turbidity >= 50 && turbidity <= 75) {
+      turbidityStatus = "Turbid";
+      turbidityClass = "status-warning";
+    } else if (turbidity >= 76 && turbidity <= 150) {
+      turbidityStatus = "Very Turbid";
+      turbidityClass = "status-danger";
+    }
+
     float ph = readPH();
     float temperature = readTemperature();
 
     // Construct JSON payload
     String jsonPayload = "{";
     jsonPayload += "\"turbidity\":" + String(turbidity) + ",";
+    jsonPayload += "\"turbidity_status\":\"" + turbidityStatus + "\",";
+    jsonPayload += "\"turbidity_class\":\"" + turbidityClass + "\",";
     jsonPayload += "\"ph\":" + String(ph) + ",";
     jsonPayload += "\"temperature\":" + String(temperature);
     jsonPayload += "}";

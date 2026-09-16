@@ -37,16 +37,19 @@ document.addEventListener('DOMContentLoaded', () => {
         if (data.turbidity !== undefined) {
             const val = parseFloat(data.turbidity).toFixed(1);
             document.getElementById('val-turbidity').textContent = val;
+            if (data.turbidity_status) {
+                document.getElementById('val-turbidity-status').textContent = data.turbidity_status;
+            }
 
-            // Logic for progress bar and color (assuming 0-100 scale for demo)
-            const percent = Math.min(Math.max((val / 100) * 100, 0), 100);
+            // Logic for progress bar and color (0-150 scale based on sensor logic)
+            const percent = Math.min(Math.max((val / 150) * 100, 0), 100);
             document.getElementById('prog-turbidity').style.width = `${percent}%`;
 
             const card = document.getElementById('card-turbidity');
             card.classList.remove('status-normal', 'status-warning', 'status-danger');
-            if (val < 30) card.classList.add('status-normal');
-            else if (val < 70) card.classList.add('status-warning');
-            else card.classList.add('status-danger');
+            if (data.turbidity_class) {
+                card.classList.add(data.turbidity_class);
+            }
         }
 
         // pH Level
