@@ -88,19 +88,48 @@ async def video_feed():
         media_type="multipart/x-mixed-replace; boundary=frame"
     )
 
-# --- Sensor data endpoint (called by ESP32 WROOM every 2 seconds) ---
-@app.post("/api/sensors")
-async def receive_sensor_data(request: Request):
-    global latest_sensor_data
-    try:
-        data = await request.json()
-        latest_sensor_data.update(data)
-        print(f"[ESP32] {latest_sensor_data}")
-        await manager.broadcast(latest_sensor_data)
-        return {"status": "ok"}
-    except Exception as e:
-        print(f"[ERROR] Failed to parse sensor data: {e}")
-        return {"status": "error", "message": str(e)}
+# --- Sensor polling background task ---
+_sensor_url = None
+_sensor_task = None
+
+async def poll_sensors():
+    global latest_sensor_data, _sensor_url
+    import httpx
+    
+    async with httpx.AsyncClient() as client:
+        while True:
+            if _sensor_url:
+                try:
+                    resp = await client.get(_sensor_url, timeout=3.0)
+                    if resp.status_code == 200:
+                        data = resp.json()
+                        latest_sensor_data.update(data)
+                        print(f"[ESP32 Sensor] {latest_sensor_data}")
+                        await manager.broadcast(latest_sensor_data)
+                except Exception as e:
+                    print(f"[Sensor Poll Error] {e}")
+            await asyncio.sleep(2)
+
+@app.on_event("startup")
+async def startup_event():
+    global _sensor_task
+    _sensor_task = asyncio.create_task(poll_sensors())
+
+# --- Set the ESP32 Sensor Node URL ---
+@app.post("/api/set_sensor_node")
+async def set_sensor_node(request: Request):
+    """
+    Called by the frontend when the user enters the ESP32 Sensor Node IP.
+    """
+    global _sensor_url
+    body = await request.json()
+    url = body.get("url", "").strip()
+    if not url:
+        return {"status": "error", "message": "url is required"}
+    
+    _sensor_url = url
+    print(f"[Server] Sensor URL updated to: {_sensor_url}")
+    return {"status": "ok", "url": url}
 
 # --- WebSocket endpoint (used by the browser dashboard) ---
 @app.websocket("/ws")

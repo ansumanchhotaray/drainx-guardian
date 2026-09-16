@@ -139,4 +139,44 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         connectBtn.disabled = false;
     });
+
+    // Sensor Connection Logic
+    const connectSensorBtn = document.getElementById('connect-sensor');
+    const sensorIpInput = document.getElementById('sensor-ip');
+
+    if (connectSensorBtn) {
+        connectSensorBtn.addEventListener('click', async () => {
+            const ip = sensorIpInput.value.trim();
+            if (!ip) {
+                alert("Please enter the ESP32 Sensor Node IP address.");
+                return;
+            }
+
+            const sensorUrl = `http://${ip}/sensors`;
+            connectSensorBtn.textContent = 'Connecting...';
+            connectSensorBtn.disabled = true;
+
+            try {
+                // Tell the Python backend to start polling sensor data
+                const resp = await fetch('/api/set_sensor_node', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ url: sensorUrl })
+                });
+                const data = await resp.json();
+
+                if (data.status === 'ok') {
+                    connectSensorBtn.textContent = 'Connected';
+                    connectSensorBtn.style.backgroundColor = 'var(--success)';
+                } else {
+                    alert(`Server error: ${data.message}`);
+                    connectSensorBtn.textContent = 'Connect Sensors';
+                }
+            } catch (e) {
+                alert("Could not reach the Python server. Is it running?");
+                connectSensorBtn.textContent = 'Connect Sensors';
+            }
+            connectSensorBtn.disabled = false;
+        });
+    }
 });
