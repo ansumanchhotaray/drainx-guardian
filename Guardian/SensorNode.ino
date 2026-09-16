@@ -12,7 +12,7 @@ const char* serverName = "http://192.168.137.1:8000/api/sensors";
 
 // --- Sensor Pins (Using ADC1 pins which are safe with Wi-Fi) ---
 #define TURBIDITY_PIN 32
-#define PH_SENSOR_PIN 33
+#define PH_SENSOR_PIN 35
 #define TEMP_SENSOR_PIN 34 // Placeholder for analog temp sensor
 #define TRIG_PIN 5
 #define ECHO_PIN 18
