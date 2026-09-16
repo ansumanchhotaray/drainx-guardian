@@ -1,6 +1,6 @@
 # DrainX Guardian
 
-An autonomous drainage monitoring system that uses a two-board ESP32 architecture to stream live video and monitor water quality (Turbidity, pH, Temperature, and Water Level) in real-time.
+An autonomous drainage monitoring system that uses a two-board ESP32 architecture to stream live video and monitor water quality (Turbidity, pH, and Temperature) in real-time.
 
 ## Architecture Overview
 

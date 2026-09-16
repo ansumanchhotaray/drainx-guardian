@@ -19,7 +19,6 @@ app.add_middleware(
 latest_sensor_data = {
     "turbidity": 0.0,
     "ph": 0.0,
-    "water_level_cm": 0.0,
     "temperature": 0.0
 }
 

@@ -16,8 +16,7 @@ cleaning mechanism yet, so we will just display the things.
 
 The sensor connection approach is now documented in `WIRING_GUIDE.md`.
 
-We have camera sensor, turbidity sensor, ultrasonic sensor (for water
-level), and ph sensor, and also temperature sensor.
+We have camera sensor, turbidity sensor, ph sensor, and also temperature sensor.
 
 * Extended Architecture & Integration Plan
 
@@ -32,13 +31,11 @@ To overcome the ESP32-CAM's hardware limitations (specifically the conflict betw
 
 *** B. Sensor Node (ESP32 WROOM)
 - **Role**: Reads all environmental sensors and sends data via HTTP POST directly to the backend.
-- **Sensors**: Turbidity, Ultrasonic, pH, and Temperature.
+- **Sensors**: Turbidity, pH, and Temperature.
 - **Hardware Integration**: Uses ADC1 pins (which are safe to use alongside Wi-Fi) for analog sensors.
   - Turbidity: GPIO 32
   - pH: GPIO 33
   - Temperature: GPIO 34
-  - Ultrasonic Trig: GPIO 5
-  - Ultrasonic Echo: GPIO 18
 - **Software**: Runs `Guardian/SensorNode.ino`. Connects to the Wi-Fi hotspot, reads sensors every 2 seconds, and sends a JSON payload directly to the Python backend via an HTTP POST request.
 
 ** 2. Controller Laptop (Central Hub)
@@ -55,7 +52,7 @@ To overcome the ESP32-CAM's hardware limitations (specifically the conflict betw
 ** 4. Frontend Web UI
 - **Technology**: HTML/CSS/JS served directly by the FastAPI backend (from `/static`).
 - **Features**:
-  - A modern, glassmorphic dashboard displaying real-time sensor readings (Turbidity, Water Level, pH, Temperature).
+  - A modern, glassmorphic dashboard displaying real-time sensor readings (Turbidity, pH, Temperature).
   - A "Connect Stream" input where the user enters the ESP32-CAM's local IP. The frontend POSTs this URL to `/api/camera`, after which the backend begins pulling and processing the stream.
   - A live video feed `<img>` element pointed at the backend's `/video_feed` endpoint, which displays the MJPEG stream with garbage detection overlays.
   - Communicates with the Python backend via WebSockets (`/ws`) for zero-latency sensor data updates.

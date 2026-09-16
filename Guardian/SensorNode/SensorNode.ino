@@ -13,8 +13,6 @@ WebServer server(80);
 #define TURBIDITY_PIN 32
 #define PH_SENSOR_PIN 35
 #define ONE_WIRE_BUS 34  // Data pin for DS18B20 (temp)
-#define TRIG_PIN 5
-#define ECHO_PIN 18
 
 // Initialize OneWire and DallasTemperature
 OneWire oneWire(ONE_WIRE_BUS);
@@ -56,16 +54,6 @@ float readPH() {
   return ph_act;
 }
 
-float readUltrasonic() {
-  digitalWrite(TRIG_PIN, LOW);
-  delayMicroseconds(2);
-  digitalWrite(TRIG_PIN, HIGH);
-  delayMicroseconds(10);
-  digitalWrite(TRIG_PIN, LOW);
-  long duration = pulseIn(ECHO_PIN, HIGH);
-  float distance = duration * 0.034 / 2;
-  return distance;
-}
 
 float readTemperature() {
   sensors.requestTemperatures();
@@ -87,8 +75,6 @@ void setup() {
   // Initialize Sensor Pins
   pinMode(TURBIDITY_PIN, INPUT);
   pinMode(PH_SENSOR_PIN, INPUT);
-  pinMode(TRIG_PIN, OUTPUT);
-  pinMode(ECHO_PIN, INPUT);
 
   // Initialize the DS18B20 sensor
   sensors.begin();
@@ -108,14 +94,12 @@ void setup() {
   server.on("/sensors", []() {
     float turbidity = readTurbidity();
     float ph = readPH();
-    float distance = readUltrasonic();
     float temperature = readTemperature();
 
     // Construct JSON payload
     String jsonPayload = "{";
     jsonPayload += "\"turbidity\":" + String(turbidity) + ",";
     jsonPayload += "\"ph\":" + String(ph) + ",";
-    jsonPayload += "\"water_level_cm\":" + String(distance) + ",";
     jsonPayload += "\"temperature\":" + String(temperature);
     jsonPayload += "}";
 

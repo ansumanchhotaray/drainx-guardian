@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -9,6 +10,7 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;800&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="/static/style.css">
 </head>
+
 <body>
     <div class="background-blobs">
         <div class="blob blob-1"></div>
@@ -36,7 +38,9 @@
                 </div>
                 <div class="video-container">
                     <!-- Replace the src with your ESP32-CAM IP when running -->
-                    <img id="camera-stream" src="https://via.placeholder.com/640x480.png?text=Waiting+for+Camera+Stream..." alt="Live Stream">
+                    <img id="camera-stream"
+                        src="https://via.placeholder.com/640x480.png?text=Waiting+for+Camera+Stream..."
+                        alt="Live Stream">
                     <div class="overlay-ui">
                         <div class="target-box"></div>
                     </div>
@@ -50,11 +54,12 @@
             <!-- Sensors Section -->
             <section class="sensors-section">
                 <div class="controls" style="margin-bottom: 20px; display: flex; gap: 10px;">
-                    <input type="text" id="sensor-ip" placeholder="ESP32 Sensor Node IP (e.g. 192.168.137.x)" class="glass-input" style="flex: 1;">
+                    <input type="text" id="sensor-ip" placeholder="ESP32 Sensor Node IP (e.g. 192.168.137.x)"
+                        class="glass-input" style="flex: 1;">
                     <button id="connect-sensor" class="btn-primary">Connect Sensors</button>
                 </div>
                 <div class="sensor-grid">
-                    
+
                     <!-- Turbidity Card -->
                     <div class="sensor-card glass-panel" id="card-turbidity">
                         <div class="sensor-icon">🌊</div>
@@ -85,21 +90,6 @@
                         </div>
                     </div>
 
-                    <!-- Water Level Card -->
-                    <div class="sensor-card glass-panel" id="card-water">
-                        <div class="sensor-icon">📏</div>
-                        <div class="sensor-info">
-                            <h3>Water Level</h3>
-                            <div class="value-container">
-                                <span class="value" id="val-water">--</span>
-                                <span class="unit">cm</span>
-                            </div>
-                            <div class="progress-bar">
-                                <div class="progress-fill" id="prog-water" style="width: 0%;"></div>
-                            </div>
-                        </div>
-                    </div>
-
                     <!-- Temperature Card -->
                     <div class="sensor-card glass-panel" id="card-temp">
                         <div class="sensor-icon">🌡️</div>
@@ -122,4 +112,5 @@
 
     <script src="/static/script.js"></script>
 </body>
+
 </html>

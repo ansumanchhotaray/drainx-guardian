@@ -19,29 +19,22 @@ The ESP32 WROOM reads all the sensors and sends the data directly to the Python 
 - **Wiring**: We will use the **ADC1** pins on the ESP32 WROOM, which work perfectly even when Wi-Fi is turned on.
 
 ### Power Connections
-- **ESP32 5V (VIN)** -> Connect to the `VCC` or `5V` pin of the Ultrasonic, Turbidity, and pH sensors.
+- **ESP32 5V (VIN)** -> Connect to the `VCC` or `5V` pin of the Turbidity, and pH sensors.
 - **ESP32 GND** -> Connect to the `GND` pin of **ALL** sensors.
 
 ### Sensor Data Connections
 
-#### 1. Ultrasonic Sensor (HC-SR04)
-- **VCC** -> 5V
-- **GND** -> GND
-- **TRIG** -> **GPIO 5**
-- **ECHO** -> **GPIO 18**
-  - *Safety Note*: The HC-SR04 outputs a 5V signal on the ECHO pin, but the ESP32 expects 3.3V. It is highly recommended to use a voltage divider (e.g., a 1kΩ and 2kΩ resistor) on the ECHO pin to drop the voltage to 3.3V to prevent damaging the ESP32.
-
-#### 2. Turbidity Sensor
+#### 1. Turbidity Sensor
 - **VCC** -> 5V
 - **GND** -> GND
 - **OUT (Analog)** -> **GPIO 32** (ADC1_CH4)
 
-#### 3. pH Sensor
+#### 2. pH Sensor
 - **VCC** -> 5V
 - **GND** -> GND
 - **PO (Analog Out)** -> **GPIO 35** (ADC1_CH5)
 
-#### 4. Temperature Sensor (Analog Placeholder)
+#### 3. Temperature Sensor (Analog Placeholder)
 - **VCC** -> 5V or 3.3V (depending on sensor)
 - **GND** -> GND
 - **OUT (Analog)** -> **GPIO 34** (ADC1_CH6)

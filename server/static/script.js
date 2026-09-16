@@ -65,22 +65,6 @@ document.addEventListener('DOMContentLoaded', () => {
             else card.classList.add('status-danger');
         }
 
-        // Water Level
-        if (data.water_level_cm !== undefined) {
-            const val = parseFloat(data.water_level_cm).toFixed(1);
-            document.getElementById('val-water').textContent = val;
-
-            // Assuming max depth is 200cm
-            const percent = Math.min((val / 200) * 100, 100);
-            document.getElementById('prog-water').style.width = `${percent}%`;
-
-            const card = document.getElementById('card-water');
-            card.classList.remove('status-normal', 'status-warning', 'status-danger');
-            if (val > 50) card.classList.add('status-normal'); // Deep water is good?
-            else if (val > 20) card.classList.add('status-warning');
-            else card.classList.add('status-danger'); // Too shallow/overflowing depending on sensor mount
-        }
-
         // Temperature
         if (data.temperature !== undefined) {
             const val = parseFloat(data.temperature).toFixed(1);
