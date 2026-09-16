@@ -1,5 +1,7 @@
 #include <WiFi.h>
 #include <HTTPClient.h>
+#include <OneWire.h>
+#include <DallasTemperature.h>
 
 // --- Network Settings ---
 const char* ssid = "drainx-controller";
@@ -13,9 +15,13 @@ const char* serverName = "http://192.168.137.1:8000/api/sensors";
 // --- Sensor Pins (Using ADC1 pins which are safe with Wi-Fi) ---
 #define TURBIDITY_PIN 32
 #define PH_SENSOR_PIN 35
-#define TEMP_SENSOR_PIN 34 // Placeholder for analog temp sensor
+#define ONE_WIRE_BUS 34  // Data pin for DS18B20 (temp)
 #define TRIG_PIN 5
 #define ECHO_PIN 18
+
+// Initialize OneWire and DallasTemperature
+OneWire oneWire(ONE_WIRE_BUS);
+DallasTemperature sensors(&oneWire);
 
 unsigned long lastSensorPublish = 0;
 
@@ -67,11 +73,16 @@ float readUltrasonic() {
 }
 
 float readTemperature() {
-  // Placeholder for analog temperature sensor
-  int tempValue = analogRead(TEMP_SENSOR_PIN);
-  float voltage = tempValue * (3.3 / 4095.0);
-  float temperature = voltage * 100.0; // Example conversion
-  return temperature;
+  sensors.requestTemperatures();
+  float tempC = sensors.getTempCByIndex(0);
+  
+  // Error handling if sensor is unplugged or missing pull-up
+  if (tempC == DEVICE_DISCONNECTED_C) {
+    Serial.println("WARNING: DS18B20 temperature sensor disconnected! Check wiring and pull-up resistor (4.7k).");
+    return -999.0;
+  }
+  
+  return tempC;
 }
 
 void setup() {
@@ -81,9 +92,11 @@ void setup() {
   // Initialize Sensor Pins
   pinMode(TURBIDITY_PIN, INPUT);
   pinMode(PH_SENSOR_PIN, INPUT);
-  pinMode(TEMP_SENSOR_PIN, INPUT);
   pinMode(TRIG_PIN, OUTPUT);
   pinMode(ECHO_PIN, INPUT);
+
+  // Initialize the DS18B20 sensor
+  sensors.begin();
 
   // Connect to Laptop Wi-Fi Hotspot
   WiFi.begin(ssid, password);
