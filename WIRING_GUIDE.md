@@ -34,10 +34,10 @@ The ESP32 WROOM reads all the sensors and sends the data directly to the Python 
 - **GND** -> GND
 - **PO (Analog Out)** -> **GPIO 35** (ADC1_CH5)
 
-#### 3. Temperature Sensor (Analog Placeholder)
-- **VCC** -> 5V or 3.3V (depending on sensor)
+#### 3. Temperature Sensor (DS18B20)
+- **VCC** -> 3.3V or 5V
 - **GND** -> GND
-- **OUT (Analog)** -> **GPIO 34** (ADC1_CH6)
+- **DATA** -> **GPIO 4** (Requires 4.7kΩ pull-up resistor to VCC)
 
 ---
 

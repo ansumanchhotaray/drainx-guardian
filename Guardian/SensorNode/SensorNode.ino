@@ -12,7 +12,7 @@ WebServer server(80);
 // --- Sensor Pins (Using ADC1 pins which are safe with Wi-Fi) ---
 #define TURBIDITY_PIN 32
 #define PH_SENSOR_PIN 35
-#define ONE_WIRE_BUS 34  // Data pin for DS18B20 (temp)
+#define ONE_WIRE_BUS 4  // Data pin for DS18B20 (temp)
 
 // Initialize OneWire and DallasTemperature
 OneWire oneWire(ONE_WIRE_BUS);
@@ -58,13 +58,6 @@ float readPH() {
 float readTemperature() {
   sensors.requestTemperatures();
   float tempC = sensors.getTempCByIndex(0);
-
-  // Error handling if sensor is unplugged or missing pull-up
-  if (tempC == DEVICE_DISCONNECTED_C) {
-    Serial.println("WARNING: DS18B20 temperature sensor disconnected! Check wiring and pull-up resistor (4.7k).");
-    return -999.0;
-  }
-
   return tempC;
 }
 
