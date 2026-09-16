@@ -79,7 +79,7 @@ async def _frame_generator():
         frame = vision.get_latest_frame()
         if frame:
             yield boundary + header + frame + b"\r\n"
-        await asyncio.sleep(0.04)  # ~25 fps max
+        await asyncio.sleep(1)  # ~25 fps max
 
 @app.get("/video_feed")
 async def video_feed():

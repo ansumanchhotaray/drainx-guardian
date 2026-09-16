@@ -2,7 +2,7 @@
 #include <WiFi.h>
 
 // --- Network Settings ---
-const char* ssid = "CMF by Nothing Phone 2 Pro";
+const char* ssid = "drainx-controller";
 const char* password = "12345678";
 
 WiFiServer server(80);
