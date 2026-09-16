@@ -39,7 +39,7 @@ The ESP32 WROOM reads all the sensors and sends the data directly to the Python 
 #### 3. pH Sensor
 - **VCC** -> 5V
 - **GND** -> GND
-- **PO (Analog Out)** -> **GPIO 33** (ADC1_CH5)
+- **PO (Analog Out)** -> **GPIO 35** (ADC1_CH5)
 
 #### 4. Temperature Sensor (Analog Placeholder)
 - **VCC** -> 5V or 3.3V (depending on sensor)
