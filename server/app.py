@@ -236,6 +236,8 @@ async def poll_sensors():
 async def startup_event():
     global _sensor_task
     loop = asyncio.get_running_loop()
+    # Pre-warm AI model in background
+    vision.start_model_loading()
     # Start UDP discovery beacon listener
     t = threading.Thread(target=udp_discovery_worker, args=(loop,), daemon=True)
     t.start()

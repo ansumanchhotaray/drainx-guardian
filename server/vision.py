@@ -39,23 +39,34 @@ CLASS_TO_CATEGORY = {
 }
 
 _model = None
+_model_loading = False
 _model_lock = threading.Lock()
 
-def get_model():
-    """Lazy-load the YOLO-World model for zero-shot detection."""
-    global _model
-    if _model is None:
+def _load_model_worker():
+    global _model, _model_loading
+    try:
+        from ultralytics import YOLO
+        print("[Vision] Loading YOLO-World (Zero-Shot) in background...")
+        model = YOLO("yolov8s-worldv2.pt")
+        model.set_classes(DRAINAGE_CLASSES)
         with _model_lock:
-            if _model is None:
-                from ultralytics import YOLO
-                print("[Vision] Loading YOLO-World (Zero-Shot)...")
-                # yolov8s-worldv2.pt is the default world model, it downloads automatically
-                _model = YOLO("yolov8s-worldv2.pt")
-                # Set our exact custom text prompts
-                _model.set_classes(DRAINAGE_CLASSES)
-                print("[Vision] YOLO-World ready with TACO-like classes!")
-    return _model
+            _model = model
+        print("[Vision] YOLO-World ready with TACO-like classes!")
+    except Exception as e:
+        print(f"[Vision] Error loading YOLO model: {e}")
+    finally:
+        _model_loading = False
 
+def start_model_loading():
+    """Start loading the AI model in background without blocking video streaming."""
+    global _model_loading
+    if _model is None and not _model_loading:
+        _model_loading = True
+        t = threading.Thread(target=_load_model_worker, daemon=True)
+        t.start()
+
+def get_model():
+    return _model
 
 # --- Shared state ---
 _camera_url: str = None
@@ -66,54 +77,66 @@ _thread: threading.Thread = None
 
 
 def annotate_frame(frame):
-    """Run YOLO-World on a frame and draw bounding boxes."""
-    model = get_model()
-    results = model(frame, verbose=False)[0]
-
-    garbage_found = False
-    for box in results.boxes:
-        cls_id = int(box.cls[0])
-        conf = float(box.conf[0])
-
-        if conf > 0.15:  # YOLO-World sometimes has lower confidences for niche text
-            garbage_found = True
-            x1, y1, x2, y2 = map(int, box.xyxy[0])
-            
-            obj_name = DRAINAGE_CLASSES[cls_id]
-            category, color = CLASS_TO_CATEGORY[obj_name]
-            
-            label = f"{obj_name} {conf:.0%}"
-
-            # Draw bounding box
-            cv2.rectangle(frame, (x1, y1), (x2, y2), color, 2)
-
-            # Draw label pill background
-            (tw, th), _ = cv2.getTextSize(
-                label, cv2.FONT_HERSHEY_SIMPLEX, 0.55, 1
-            )
-            cv2.rectangle(
-                frame,
-                (x1, y1 - th - 8),
-                (x1 + tw + 6, y1),
-                color, -1
-            )
-            
-            # Put white text inside the pill
-            cv2.putText(
-                frame, label,
-                (x1 + 3, y1 - 4),
-                cv2.FONT_HERSHEY_SIMPLEX, 0.55,
-                (255, 255, 255), 1, cv2.LINE_AA
-            )
-
-    # Optional: watermark when garbage is detected
-    if garbage_found:
+    """Run YOLO-World on a frame and draw bounding boxes, or stream raw frame while model loads."""
+    global _model
+    if _model is None:
+        # AI model is still loading in background; show live feed with status label
         cv2.putText(
-            frame, "DEBRIS DETECTED",
-            (10, frame.shape[0] - 10),
-            cv2.FONT_HERSHEY_SIMPLEX, 0.7,
-            (0, 0, 220), 2, cv2.LINE_AA
+            frame, "AI Initializing...",
+            (10, 25),
+            cv2.FONT_HERSHEY_SIMPLEX, 0.6,
+            (0, 165, 255), 2, cv2.LINE_AA
         )
+        return frame
+
+    try:
+        results = _model(frame, verbose=False)[0]
+        garbage_found = False
+        for box in results.boxes:
+            cls_id = int(box.cls[0])
+            conf = float(box.conf[0])
+
+            if conf > 0.15:  # YOLO-World threshold
+                garbage_found = True
+                x1, y1, x2, y2 = map(int, box.xyxy[0])
+                
+                obj_name = DRAINAGE_CLASSES[cls_id]
+                category, color = CLASS_TO_CATEGORY[obj_name]
+                
+                label = f"{obj_name} {conf:.0%}"
+
+                # Draw bounding box
+                cv2.rectangle(frame, (x1, y1), (x2, y2), color, 2)
+
+                # Draw label pill background
+                (tw, th), _ = cv2.getTextSize(
+                    label, cv2.FONT_HERSHEY_SIMPLEX, 0.55, 1
+                )
+                cv2.rectangle(
+                    frame,
+                    (x1, y1 - th - 8),
+                    (x1 + tw + 6, y1),
+                    color, -1
+                )
+                
+                # Put white text inside the pill
+                cv2.putText(
+                    frame, label,
+                    (x1 + 3, y1 - 4),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.55,
+                    (255, 255, 255), 1, cv2.LINE_AA
+                )
+
+        # Watermark when garbage is detected
+        if garbage_found:
+            cv2.putText(
+                frame, "DEBRIS DETECTED",
+                (10, frame.shape[0] - 10),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.7,
+                (0, 0, 220), 2, cv2.LINE_AA
+            )
+    except Exception as e:
+        print(f"[Vision] Inference error: {e}")
 
     return frame
 
@@ -122,22 +145,22 @@ def _poll_snapshots():
     """Background thread: polls ESP32-CAM /capture endpoint, runs YOLO, stores annotated frame."""
     global _latest_frame, _running
 
-    # Pre-load the model so the first frame isn't slow
-    get_model()
+    # Start model loading in background without blocking the snapshot stream
+    start_model_loading()
 
     while _running:
         url = _camera_url
         if not url:
-            time.sleep(1)
+            time.sleep(0.5)
             continue
 
         try:
             # Fetch a single JPEG snapshot from the ESP32-CAM
-            response = requests.get(url, timeout=5)
+            response = requests.get(url, headers={"Connection": "close"}, timeout=3)
 
             if response.status_code != 200:
                 print(f"[Vision] Snapshot request failed: HTTP {response.status_code}")
-                time.sleep(0.5)
+                time.sleep(0.2)
                 continue
 
             # Decode the JPEG image
@@ -148,26 +171,26 @@ def _poll_snapshots():
             )
             if frame is None:
                 print("[Vision] Failed to decode JPEG snapshot")
-                time.sleep(0.5)
+                time.sleep(0.2)
                 continue
 
-            # Run YOLO inference and draw bounding boxes
+            # Run YOLO inference or pass through live frame
             frame = annotate_frame(frame)
 
-            # Encode the annotated frame back to JPEG
+            # Encode the frame back to JPEG
             _, jpeg = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 85])
             with _frame_lock:
                 _latest_frame = jpeg.tobytes()
 
         except requests.exceptions.ConnectionError:
-            print(f"[Vision] Cannot reach camera at {url}. Retrying in 3s...")
-            time.sleep(3)
+            print(f"[Vision] Cannot reach camera at {url}. Retrying in 2s...")
+            time.sleep(2)
         except requests.exceptions.Timeout:
             print(f"[Vision] Snapshot request timed out. Retrying...")
-            time.sleep(1)
+            time.sleep(0.5)
         except Exception as exc:
-            print(f"[Vision] Error: {exc}. Retrying in 2s...")
-            time.sleep(2)
+            print(f"[Vision] Error: {exc}. Retrying in 1s...")
+            time.sleep(1)
 
 
 def set_camera_url(url: str):
