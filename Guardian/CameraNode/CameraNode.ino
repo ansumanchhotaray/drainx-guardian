@@ -1,11 +1,26 @@
 #include <esp_camera.h>
 #include <WiFi.h>
+#include <WiFiUdp.h>
 
-// --- Network Settings ---
+// --- Network & Discovery Settings ---
 const char* ssid = "drainx-controller";
 const char* password = "12345678";
+const int DISCOVERY_PORT = 5005;
 
 WiFiServer server(80);
+WiFiUDP udp;
+unsigned long lastBeaconTime = 0;
+
+void broadcastBeacon() {
+  if (WiFi.status() != WL_CONNECTED) return;
+  IPAddress broadcastIp(, 255, 255, 255);
+  String macStr = WiFi.macAddr255ess();
+  String ipStr = WiFi.localIP().toString();
+   message = "{\"device\":\"drainx-guardian\",\"role\":\"camera\",\"mac\":\"" + macStr + "\",\"ip\":\"" + ipStr + "\",\"port\":80}";
+  udp.beginPacket(broadcastIp, DISCOVERY_PORT);
+  udp.print(message);
+  udp.endPacket();
+}
 
 // --- AI Thinker ESP32-CAM Pins ---
 #define PWDN_GPIO_NUM    32
@@ -115,9 +130,19 @@ void handleClient() {
 
     esp_camera_fb_return(fb);
     Serial.println("Snapshot served");
+  } else if (request.indexOf("GET /api/info") >= 0 || request.indexOf("GET /info") >= 0) {
+    // --- Device Info Endpoint ---
+    String body = "{\"device\":\"drainx-guardian\",\"role\":\"camera\",\"mac\":\"" + WiFi.macAddress() + "\",\"ip\":\"" + WiFi.localIP().toString() + "\",\"port\":80}";
+    client.println("HTTP/1.1 200 OK");
+    client.println("Content-Type: application/json");
+    client.println("Access-Control-Allow-Origin: *");
+    client.printf("Content-Length: %u\r\n", body.length());
+    client.println("Connection: close");
+    client.println();
+    client.print(body);
   } else {
-    // --- Simple status page for any other request ---
-    String body = "{\"status\":\"ok\",\"endpoints\":[\"/capture\"]}";
+    // --- Simple statStringus page for any other request ---
+    String body = "{\"status\":\"ok\",\"role\":\"camera\",\"mac\":\"" + WiFi.macAddress() + "\",\"endpoints\":[\"/capture\",\"/api/info\"]}";
     client.println("HTTP/1.1 200 OK");
     client.println("Content-Type: application/json");
     client.println("Access-Control-Allow-Origin: *");
@@ -152,12 +177,17 @@ void setup() {
     Serial.print(".");
   }
   Serial.println("\nWiFi Connected!");
+  Serial.print("MAC Address: ");
+  Serial.println(WiFi.macAddress());
   Serial.print("Camera Snapshot URL: http://");
   Serial.print(WiFi.localIP());
   Serial.println("/capture");
 
   // Start HTTP Server on Port 80
   server.begin();
+
+  // Start UDP for broadcast discovery
+  udp.begin(DISCOVERY_PORT);
 
   // Pin server task to Core 0
   xTaskCreatePinnedToCore(
@@ -172,6 +202,10 @@ void setup() {
 }
 
 void loop() {
-  // HTTP server is handled in serverTask
-  delay(1000);
+  // Broadcast discovery beacon every 2 seconds
+  if (millis() - lastBeaconTime > 2000) {
+    lastBeaconTime = millis();
+    broadcastBeacon();
+  }
+  delay(10);
 }

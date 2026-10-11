@@ -45,7 +45,16 @@
                         <div class="target-box"></div>
                     </div>
                 </div>
-                <div class="controls">
+                <div class="node-status-bar" id="cam-status-bar">
+                    <div class="node-status-info">
+                        <span class="status-dot searching" id="cam-dot"></span>
+                        <span class="node-label">Camera:</span>
+                        <span class="node-detail" id="cam-detail">Scanning network for ESP32-CAM...</span>
+                    </div>
+                    <span class="mac-badge" id="cam-mac-badge">MAC: Auto</span>
+                </div>
+                <button type="button" class="manual-toggle-btn" id="toggle-cam-manual">Manual IP Override ▾</button>
+                <div class="controls manual-controls-container hidden" id="cam-manual-controls">
                     <input type="text" id="cam-ip" placeholder="ESP32-CAM IP (e.g. 192.168.137.x)" class="glass-input">
                     <button id="connect-cam" class="btn-primary">Connect Stream</button>
                 </div>
@@ -53,7 +62,16 @@
 
             <!-- Sensors Section -->
             <section class="sensors-section">
-                <div class="controls" style="margin-bottom: 20px; display: flex; gap: 10px;">
+                <div class="node-status-bar" id="sensor-status-bar" style="margin-bottom: 0.5rem;">
+                    <div class="node-status-info">
+                        <span class="status-dot searching" id="sensor-dot"></span>
+                        <span class="node-label">Sensor Node:</span>
+                        <span class="node-detail" id="sensor-detail">Scanning network for Sensor Node...</span>
+                    </div>
+                    <span class="mac-badge" id="sensor-mac-badge">MAC: Auto</span>
+                </div>
+                <button type="button" class="manual-toggle-btn" id="toggle-sensor-manual">Manual IP Override ▾</button>
+                <div class="controls manual-controls-container hidden" id="sensor-manual-controls" style="margin-bottom: 20px; display: flex; gap: 10px;">
                     <input type="text" id="sensor-ip" placeholder="ESP32 Sensor Node IP (e.g. 192.168.137.x)"
                         class="glass-input" style="flex: 1;">
                     <button id="connect-sensor" class="btn-primary">Connect Sensors</button>

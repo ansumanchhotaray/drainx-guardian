@@ -2,12 +2,27 @@
 #include <WebServer.h>
 #include <OneWire.h>
 #include <DallasTemperature.h>
+#include <WiFiUdp.h>
 
-// --- Network Settings ---
+// --- Network & Discovery Settings ---
 const char* ssid = "drainx-controller";
 const char* password = "12345678";
+const int DISCOVERY_PORT = 5005;
 
 WebServer server(80);
+WiFiUDP udp;
+unsigned long lastBeaconTime = 0;
+
+void broadcastBeacon() {
+  if (WiFi.status() != WL_CONNECTED) return;
+  IPAddress broadcastIp(255, 255, 255, 255);
+  String macStr = WiFi.macAddress();
+  String ipStr = WiFi.localIP().toString();
+  String message = "{\"device\":\"drainx-guardian\",\"role\":\"sensor\",\"mac\":\"" + macStr + "\",\"ip\":\"" + ipStr + "\",\"port\":80}";
+  udp.beginPacket(broadcastIp, DISCOVERY_PORT);
+  udp.print(message);
+  udp.endPacket();
+}
 
 // --- Sensor Pins (Using ADC1 pins which are safe with Wi-Fi) ---
 #define TURBIDITY_PIN 32
@@ -80,10 +95,27 @@ void setup() {
     Serial.print(".");
   }
   Serial.println("\nWiFi Connected!");
+  Serial.print("MAC Address: ");
+  Serial.println(WiFi.macAddress());
   Serial.print("Sensor Node IP: ");
   Serial.println(WiFi.localIP());
 
+  // Start UDP for broadcast discovery
+  udp.begin(DISCOVERY_PORT);
+
   // Setup Web Server Endpoints
+  server.on("/api/info", []() {
+    String json = "{\"device\":\"drainx-guardian\",\"role\":\"sensor\",\"mac\":\"" + WiFi.macAddress() + "\",\"ip\":\"" + WiFi.localIP().toString() + "\",\"port\":80}";
+    server.sendHeader("Access-Control-Allow-Origin", "*");
+    server.send(200, "application/json", json);
+  });
+
+  server.on("/info", []() {
+    String json = "{\"device\":\"drainx-guardian\",\"role\":\"sensor\",\"mac\":\"" + WiFi.macAddress() + "\",\"ip\":\"" + WiFi.localIP().toString() + "\",\"port\":80}";
+    server.sendHeader("Access-Control-Allow-Origin", "*");
+    server.send(200, "application/json", json);
+  });
+
   server.on("/sensors", []() {
     int turbidity = readTurbidity();
     String turbidityStatus = "Unknown";
@@ -123,6 +155,12 @@ void setup() {
 void loop() {
   // Handle incoming HTTP requests
   server.handleClient();
+
+  // Broadcast discovery beacon every 2 seconds
+  if (millis() - lastBeaconTime > 2000) {
+    lastBeaconTime = millis();
+    broadcastBeacon();
+  }
   delay(2);
 }
  

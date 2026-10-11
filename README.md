@@ -56,9 +56,10 @@ python webcam_demo.py
 ## 3. Viewing the Dashboard
 
 1. Open your web browser and navigate to: [http://localhost:8000](http://localhost:8000)
-2. You will see the DrainX Guardian dashboard.
-3. Once your ESP32 WROOM connects to the Wi-Fi, the sensor values will automatically update on the screen every 2 seconds.
-4. Enter the IP address of your ESP32-CAM (printed in the Arduino Serial Monitor) into the "Camera IP" input box and click Connect. The frontend will notify the backend, which will begin pulling and processing the MJPEG stream. The live, annotated video will appear in the dashboard via the backend's `/video_feed` endpoint.
+2. You will see the DrainX Guardian dashboard with real-time node discovery status bars.
+3. **Plug & Play Auto-Discovery**: As soon as your ESP32-CAM and ESP32 WROOM connect to the Wi-Fi network, they broadcast their node role and physical MAC address via UDP beacons.
+4. The server automatically detects each board, tracks its physical MAC address, starts camera stream processing, and begins telemetry polling without requiring you to manually enter IP addresses.
+5. If needed, a "Manual IP Override" dropdown is available for debugging or custom network routing.
 
 ## Folder Structure
 - `/Guardian`: Contains the Arduino `.ino` sketches for the ESP32 boards.
