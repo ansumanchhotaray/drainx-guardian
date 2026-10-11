@@ -13,10 +13,10 @@ unsigned long lastBeaconTime = 0;
 
 void broadcastBeacon() {
   if (WiFi.status() != WL_CONNECTED) return;
-  IPAddress broadcastIp(, 255, 255, 255);
-  String macStr = WiFi.macAddr255ess();
+  IPAddress broadcastIp(255, 255, 255, 255);
+  String macStr = WiFi.macAddress();
   String ipStr = WiFi.localIP().toString();
-   message = "{\"device\":\"drainx-guardian\",\"role\":\"camera\",\"mac\":\"" + macStr + "\",\"ip\":\"" + ipStr + "\",\"port\":80}";
+  String message = "{\"device\":\"drainx-guardian\",\"role\":\"camera\",\"mac\":\"" + macStr + "\",\"ip\":\"" + ipStr + "\",\"port\":80}";
   udp.beginPacket(broadcastIp, DISCOVERY_PORT);
   udp.print(message);
   udp.endPacket();
@@ -141,7 +141,7 @@ void handleClient() {
     client.println();
     client.print(body);
   } else {
-    // --- Simple statStringus page for any other request ---
+    // --- Simple status page for any other request ---
     String body = "{\"status\":\"ok\",\"role\":\"camera\",\"mac\":\"" + WiFi.macAddress() + "\",\"endpoints\":[\"/capture\",\"/api/info\"]}";
     client.println("HTTP/1.1 200 OK");
     client.println("Content-Type: application/json");
