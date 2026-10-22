@@ -425,6 +425,8 @@ h1 span {
 }
 
 .manual-toggle-btn {
+    display: block;
+    width: 100%;
     background: none;
     border: none;
     color: var(--text-muted);
@@ -433,7 +435,7 @@ h1 span {
     text-decoration: underline;
     text-align: right;
     margin-top: -0.5rem;
-    margin-bottom: 0.25rem;
+    margin-bottom: 0.75rem;
     transition: color 0.2s;
 }
 
@@ -446,5 +448,9 @@ h1 span {
 }
 
 .manual-controls-container.hidden {
-    display: none;
+    display: none !important;
+}
+
+#sensor-manual-controls {
+    margin-bottom: 1.25rem;
 }
