@@ -24,6 +24,15 @@ WebServer server(80);
 #define ENB_PIN 32
 
 // =====================================================
+// Inversion Flags
+// Toggle via Web UI or set here:
+// If front wheels are Channel A (IN1/IN2) and rotate backwards,
+// set invertChannelA = true.
+// =====================================================
+bool invertChannelA = false;
+bool invertChannelB = false;
+
+// =====================================================
 // PWM Settings
 // =====================================================
 const int PWM_FREQ = 20000;   // 20 kHz
@@ -31,9 +40,11 @@ const int PWM_RES  = 8;       // 8-bit = 0-255
 
 // =====================================================
 // Motor Speeds
+// NOTE: TT DC gear motors on L298N require 200-255 to start.
+// Speeds below ~180 often stall due to L298N internal voltage drop (~2V).
 // =====================================================
 uint8_t manualSpeed = 230;
-uint8_t autoSpeed   = 200;
+uint8_t autoSpeed   = 210;
 
 // =====================================================
 // Ultrasonic Sensor
@@ -79,77 +90,288 @@ const char index_html[] PROGMEM = R"=====(
   <title>ESP32 Web Car</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <style>
+    * { box-sizing: border-box; }
     body {
-      font-family: Arial, sans-serif;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
       text-align: center;
-      background: #111;
+      background: #121214;
       color: #eee;
       margin: 0;
-      padding: 10px;
+      padding: 16px;
     }
-    h1 { margin-top: 10px; }
-    h2 { margin-top: 30px; }
-    p { color: #bbb; }
+    h1 { font-size: 22px; margin: 10px 0 6px; }
+    .status-badge {
+      display: inline-block;
+      padding: 6px 14px;
+      font-size: 14px;
+      font-weight: 600;
+      border-radius: 20px;
+      background: #2a2a30;
+      color: #00e676;
+      margin-bottom: 12px;
+    }
     .btn {
       display: inline-block;
       padding: 18px 26px;
-      margin: 8px;
+      margin: 6px;
       font-size: 18px;
-      border-radius: 10px;
-      border: none;
+      font-weight: bold;
+      border-radius: 12px;
+      border: 1px solid #444;
       cursor: pointer;
-      min-width: 110px;
-      background: #333;
+      min-width: 105px;
+      background: #23232a;
       color: #fff;
       user-select: none;
       -webkit-user-select: none;
       touch-action: manipulation;
+      transition: all 0.1s ease;
     }
-    .btn:active {
-      transform: scale(0.97);
-      background: #555;
+    .btn:active, .btn.active {
+      transform: scale(0.95);
+      background: #00c853;
+      color: #000;
+      border-color: #00e676;
     }
-    .grid { margin-top: 25px; }
-    .row { margin: 6px 0; }
-    .mode-btn-on { background: #1b5e20; }
-    .mode-btn-off { background: #b71c1c; }
+    .btn-stop {
+      background: #d50000;
+      border-color: #ff1744;
+      color: #fff;
+    }
+    .btn-stop:active {
+      background: #b71c1c;
+      color: #fff;
+    }
+    .grid { margin: 15px auto; max-width: 360px; }
+    .row { display: flex; justify-content: center; gap: 6px; margin: 6px 0; }
+    .panel {
+      background: #1c1c22;
+      border: 1px solid #333;
+      border-radius: 12px;
+      padding: 14px;
+      max-width: 380px;
+      margin: 16px auto;
+    }
+    .panel h3 { margin: 0 0 10px 0; font-size: 16px; color: #aaa; text-transform: uppercase; letter-spacing: 1px; }
+    .mode-btn-on { background: #1b5e20; border-color: #2e7d32; }
+    .mode-btn-off { background: #37474f; border-color: #455a64; }
+    .toggle-row { display: flex; justify-content: space-between; align-items: center; margin: 10px 0; }
+    .toggle-row label { font-size: 14px; color: #ddd; }
+    .invert-btn {
+      padding: 10px 16px;
+      font-size: 13px;
+      border-radius: 8px;
+      border: 1px solid #555;
+      background: #2c2c36;
+      color: #fff;
+      cursor: pointer;
+    }
+    .invert-btn.inverted {
+      background: #e65100;
+      border-color: #ff9800;
+      color: #fff;
+      font-weight: bold;
+    }
+    .slider-row { margin: 12px 0 6px; }
+    .slider-row input { width: 80%; }
+    .mode-switch-btn {
+      padding: 8px 14px;
+      font-size: 13px;
+      border-radius: 6px;
+      border: 1px solid #555;
+      background: #2a2a32;
+      color: #ccc;
+      cursor: pointer;
+    }
+    .mode-switch-btn.selected {
+      background: #2979ff;
+      color: #fff;
+      border-color: #448aff;
+      font-weight: bold;
+    }
   </style>
 </head>
 <body>
-  <h1>ESP32 Web Controlled Car</h1>
-  <p>Hold the direction buttons to move. Toggle Obstacle Mode for automatic driving.</p>
+  <h1>DrainX Motors Control</h1>
+  <div id="statusBadge" class="status-badge">Status: STOPPED</div>
+
+  <div style="margin: 10px 0;">
+    <span style="font-size:13px; color:#aaa; margin-right:8px;">Control Mode:</span>
+    <button id="btnHoldMode" class="mode-switch-btn selected" onclick="setDriveMode('hold')">Hold to Drive</button>
+    <button id="btnContinuousMode" class="mode-switch-btn" onclick="setDriveMode('continuous')">Tap &amp; Stop</button>
+  </div>
 
   <div class="grid">
     <div class="row">
-      <button class="btn" onmousedown="sendCmd('f',1)" onmouseup="sendCmd('f',0)" onmouseleave="sendCmd('f',0)" ontouchstart="sendCmd('f',1)" ontouchend="sendCmd('f',0)">Forward</button>
+      <button id="btn-f" class="btn" data-dir="f">Forward</button>
     </div>
     <div class="row">
-      <button class="btn" onmousedown="sendCmd('l',1)" onmouseup="sendCmd('l',0)" onmouseleave="sendCmd('l',0)" ontouchstart="sendCmd('l',1)" ontouchend="sendCmd('l',0)">Left</button>
-      <button class="btn" onclick="stopCar()">Stop</button>
-      <button class="btn" onmousedown="sendCmd('r',1)" onmouseup="sendCmd('r',0)" onmouseleave="sendCmd('r',0)" ontouchstart="sendCmd('r',1)" ontouchend="sendCmd('r',0)">Right</button>
+      <button id="btn-l" class="btn" data-dir="l">Left</button>
+      <button id="btn-s" class="btn btn-stop" onclick="stopCar()">STOP</button>
+      <button id="btn-r" class="btn" data-dir="r">Right</button>
     </div>
     <div class="row">
-      <button class="btn" onmousedown="sendCmd('b',1)" onmouseup="sendCmd('b',0)" onmouseleave="sendCmd('b',0)" ontouchstart="sendCmd('b',1)" ontouchend="sendCmd('b',0)">Backward</button>
+      <button id="btn-b" class="btn" data-dir="b">Backward</button>
     </div>
   </div>
 
-  <h2>Obstacle Avoiding Mode</h2>
-  <p>When ON, the car moves forward and automatically avoids obstacles.</p>
-  <div class="row">
-    <button class="btn mode-btn-on" onclick="setMode(1)">Mode ON</button>
-    <button class="btn mode-btn-off" onclick="setMode(0)">Mode OFF</button>
+  <!-- Speed & Inversion Settings -->
+  <div class="panel">
+    <h3>Motor Tuning</h3>
+    <div class="slider-row">
+      <label>Speed: <span id="speedVal">230</span> / 255</label><br>
+      <input type="range" id="speedSlider" min="150" max="255" value="230" onchange="sendSpeed(this.value)" oninput="document.getElementById('speedVal').innerText=this.value">
+    </div>
+    <div style="font-size: 12px; color: #888; margin-bottom: 12px;">Minimum 180-200 recommended to overcome L298N voltage drop.</div>
+
+    <div class="toggle-row">
+      <label>Front / Channel A (IN1/IN2):</label>
+      <button id="btnInvA" class="invert-btn" onclick="toggleInvert('a')">Normal</button>
+    </div>
+    <div class="toggle-row">
+      <label>Rear / Channel B (IN3/IN4):</label>
+      <button id="btnInvB" class="invert-btn" onclick="toggleInvert('b')">Normal</button>
+    </div>
+  </div>
+
+  <!-- Obstacle Mode -->
+  <div class="panel">
+    <h3>Obstacle Avoidance</h3>
+    <div class="row">
+      <button class="btn mode-btn-on" style="min-width:130px; font-size:15px;" onclick="setMode(1)">Mode ON</button>
+      <button class="btn mode-btn-off" style="min-width:130px; font-size:15px;" onclick="setMode(0)">Mode OFF</button>
+    </div>
   </div>
 
   <script>
+    let driveMode = 'hold'; // 'hold' or 'continuous'
+    let activeDir = '';
+
+    function updateBadge(txt, color='#00e676') {
+      const b = document.getElementById('statusBadge');
+      b.innerText = txt;
+      b.style.color = color;
+    }
+
+    function setDriveMode(mode) {
+      driveMode = mode;
+      document.getElementById('btnHoldMode').classList.toggle('selected', mode === 'hold');
+      document.getElementById('btnContinuousMode').classList.toggle('selected', mode === 'continuous');
+      stopCar();
+    }
+
     function sendCmd(dir, state) {
-      fetch('/cmd?dir=' + dir + '&state=' + state).catch(err => console.log(err));
+      fetch('/cmd?dir=' + dir + '&state=' + state)
+        .then(r => r.text())
+        .then(() => {
+          if (state === 0 && dir !== 's') {
+            updateBadge('Status: STOPPED', '#00e676');
+          } else if (state === 1) {
+            const names = {'f':'FORWARD','b':'BACKWARD','l':'TURNING LEFT','r':'TURNING RIGHT','s':'STOPPED'};
+            updateBadge('Status: ' + (names[dir] || dir), '#2979ff');
+          }
+        })
+        .catch(err => {
+          console.error(err);
+          updateBadge('Error: ' + err.message, '#ff1744');
+        });
     }
+
     function stopCar() {
-      fetch('/cmd?dir=s&state=1').catch(err => console.log(err));
+      activeDir = '';
+      sendCmd('s', 1);
+      document.querySelectorAll('.btn').forEach(b => b.classList.remove('active'));
     }
+
+    function sendSpeed(val) {
+      fetch('/speed?val=' + val).catch(e => console.error(e));
+    }
+
+    function toggleInvert(ch) {
+      fetch('/invert?ch=' + ch)
+        .then(r => r.json())
+        .then(data => {
+          applyInvertUI(data);
+        })
+        .catch(e => console.error(e));
+    }
+
+    function applyInvertUI(data) {
+      const btnA = document.getElementById('btnInvA');
+      const btnB = document.getElementById('btnInvB');
+      if (data.chA === 'INVERTED') {
+        btnA.innerText = 'INVERTED';
+        btnA.classList.add('inverted');
+      } else {
+        btnA.innerText = 'Normal';
+        btnA.classList.remove('inverted');
+      }
+      if (data.chB === 'INVERTED') {
+        btnB.innerText = 'INVERTED';
+        btnB.classList.add('inverted');
+      } else {
+        btnB.innerText = 'Normal';
+        btnB.classList.remove('inverted');
+      }
+    }
+
     function setMode(auto) {
-      fetch('/mode?auto=' + auto).catch(err => console.log(err));
+      fetch('/mode?auto=' + auto)
+        .then(() => {
+          updateBadge(auto === 1 ? 'Status: AUTO OBSTACLE MODE' : 'Status: MANUAL MODE', auto === 1 ? '#ff9100' : '#00e676');
+        })
+        .catch(e => console.error(e));
     }
+
+    // Attach button listeners supporting both Hold & Continuous modes
+    ['f', 'b', 'l', 'r'].forEach(dir => {
+      const btn = document.getElementById('btn-' + dir);
+      if (!btn) return;
+
+      const startAction = (e) => {
+        if (e && e.cancelable) e.preventDefault();
+        if (driveMode === 'hold') {
+          btn.classList.add('active');
+          sendCmd(dir, 1);
+        } else {
+          // Continuous / Tap mode
+          if (activeDir === dir) {
+            stopCar();
+          } else {
+            document.querySelectorAll('.btn').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            activeDir = dir;
+            sendCmd(dir, 1);
+          }
+        }
+      };
+
+      const endAction = (e) => {
+        if (driveMode === 'hold') {
+          if (e && e.cancelable) e.preventDefault();
+          btn.classList.remove('active');
+          sendCmd(dir, 0);
+        }
+      };
+
+      // Pointer / Mouse events
+      btn.addEventListener('pointerdown', startAction);
+      btn.addEventListener('pointerup', endAction);
+      btn.addEventListener('pointerleave', endAction);
+      btn.addEventListener('pointercancel', endAction);
+    });
+
+    // Initial status fetch on load
+    fetch('/status')
+      .then(r => r.json())
+      .then(data => {
+        if (data.speed) {
+          document.getElementById('speedSlider').value = data.speed;
+          document.getElementById('speedVal').innerText = data.speed;
+        }
+        applyInvertUI(data);
+      })
+      .catch(e => console.log('Init status:', e));
   </script>
 </body>
 </html>
@@ -159,8 +381,42 @@ const char index_html[] PROGMEM = R"=====(
 // Motor Control Functions
 // =====================================================
 void setMotorSpeed(uint8_t leftSpeed, uint8_t rightSpeed) {
+#if defined(ESP_ARDUINO_VERSION_MAJOR) && ESP_ARDUINO_VERSION_MAJOR >= 3
   ledcWrite(ENA_PIN, leftSpeed);
   ledcWrite(ENB_PIN, rightSpeed);
+#else
+  analogWrite(ENA_PIN, leftSpeed);
+  analogWrite(ENB_PIN, rightSpeed);
+#endif
+
+  // Digital enable fallback: ensures L298N is energized even if PWM not configured
+  if (leftSpeed > 0) digitalWrite(ENA_PIN, HIGH);
+  else digitalWrite(ENA_PIN, LOW);
+
+  if (rightSpeed > 0) digitalWrite(ENB_PIN, HIGH);
+  else digitalWrite(ENB_PIN, LOW);
+}
+
+void setChannelA(bool forward) {
+  bool dir = invertChannelA ? !forward : forward;
+  if (dir) {
+    digitalWrite(IN1, HIGH);
+    digitalWrite(IN2, LOW);
+  } else {
+    digitalWrite(IN1, LOW);
+    digitalWrite(IN2, HIGH);
+  }
+}
+
+void setChannelB(bool forward) {
+  bool dir = invertChannelB ? !forward : forward;
+  if (dir) {
+    digitalWrite(IN3, HIGH);
+    digitalWrite(IN4, LOW);
+  } else {
+    digitalWrite(IN3, LOW);
+    digitalWrite(IN4, HIGH);
+  }
 }
 
 void driveStop() {
@@ -172,34 +428,26 @@ void driveStop() {
 }
 
 void driveForward(uint8_t speed) {
-  digitalWrite(IN1, HIGH);
-  digitalWrite(IN2, LOW);
-  digitalWrite(IN3, HIGH);
-  digitalWrite(IN4, LOW);
+  setChannelA(true);
+  setChannelB(true);
   setMotorSpeed(speed, speed);
 }
 
 void driveBackward(uint8_t speed) {
-  digitalWrite(IN1, LOW);
-  digitalWrite(IN2, HIGH);
-  digitalWrite(IN3, LOW);
-  digitalWrite(IN4, HIGH);
+  setChannelA(false);
+  setChannelB(false);
   setMotorSpeed(speed, speed);
 }
 
 void driveLeft(uint8_t speed) {
-  digitalWrite(IN1, LOW);
-  digitalWrite(IN2, HIGH);
-  digitalWrite(IN3, HIGH);
-  digitalWrite(IN4, LOW);
+  setChannelA(false);
+  setChannelB(true);
   setMotorSpeed(speed, speed);
 }
 
 void driveRight(uint8_t speed) {
-  digitalWrite(IN1, HIGH);
-  digitalWrite(IN2, LOW);
-  digitalWrite(IN3, LOW);
-  digitalWrite(IN4, HIGH);
+  setChannelA(true);
+  setChannelB(false);
   setMotorSpeed(speed, speed);
 }
 
@@ -243,6 +491,7 @@ void handleAutoObstacle() {
     case AUTO_FORWARD: {
       float distance = getDistanceCm();
       if (distance > 0 && distance < OBSTACLE_DIST_CM) {
+        Serial.printf("[OBSTACLE] Detected @ %.1f cm -> Backing up\n", distance);
         driveStop();
         autoState = AUTO_BACKWARD;
         autoStateStart = now;
@@ -291,29 +540,71 @@ void handleCmd() {
 
   String dir = server.arg("dir");
   int state = server.arg("state").toInt();
+  Serial.printf("[CMD] dir: %s, state: %d (ObstacleMode: %d)\n", dir.c_str(), state, obstacleMode);
 
   if (!obstacleMode) {
     bool pressed = (state != 0);
 
     if (dir == "f") {
       forwardCmd = pressed;
-      if (pressed) { backCmd = false; leftCmd = false; rightCmd = false; }
+      if (pressed) { backCmd = false; leftCmd = false; rightCmd = false; Serial.printf("[DRIVE] FORWARD @ Speed %d\n", manualSpeed); }
+      else { driveStop(); Serial.println("[DRIVE] STOP"); }
     } else if (dir == "b") {
       backCmd = pressed;
-      if (pressed) { forwardCmd = false; leftCmd = false; rightCmd = false; }
+      if (pressed) { forwardCmd = false; leftCmd = false; rightCmd = false; Serial.printf("[DRIVE] BACKWARD @ Speed %d\n", manualSpeed); }
+      else { driveStop(); Serial.println("[DRIVE] STOP"); }
     } else if (dir == "l") {
       leftCmd = pressed;
-      if (pressed) { forwardCmd = false; backCmd = false; rightCmd = false; }
+      if (pressed) { forwardCmd = false; backCmd = false; rightCmd = false; Serial.printf("[DRIVE] LEFT @ Speed %d\n", manualSpeed); }
+      else { driveStop(); Serial.println("[DRIVE] STOP"); }
     } else if (dir == "r") {
       rightCmd = pressed;
-      if (pressed) { forwardCmd = false; backCmd = false; leftCmd = false; }
+      if (pressed) { forwardCmd = false; backCmd = false; leftCmd = false; Serial.printf("[DRIVE] RIGHT @ Speed %d\n", manualSpeed); }
+      else { driveStop(); Serial.println("[DRIVE] STOP"); }
     } else if (dir == "s") {
       forwardCmd = false; backCmd = false; leftCmd = false; rightCmd = false;
       driveStop();
+      Serial.println("[DRIVE] STOP");
     }
   }
 
   server.send(200, "text/plain", "OK");
+}
+
+void handleSpeed() {
+  if (server.hasArg("val")) {
+    int s = server.arg("val").toInt();
+    if (s >= 100 && s <= 255) {
+      manualSpeed = (uint8_t)s;
+      Serial.printf("[SPEED] Updated manual speed: %d\n", manualSpeed);
+    }
+  }
+  server.send(200, "text/plain", String(manualSpeed));
+}
+
+void handleInvert() {
+  if (server.hasArg("ch")) {
+    String ch = server.arg("ch");
+    if (ch == "a") {
+      invertChannelA = !invertChannelA;
+      Serial.printf("[INVERT] Channel A is now: %s\n", invertChannelA ? "INVERTED" : "NORMAL");
+    } else if (ch == "b") {
+      invertChannelB = !invertChannelB;
+      Serial.printf("[INVERT] Channel B is now: %s\n", invertChannelB ? "INVERTED" : "NORMAL");
+    }
+  }
+  String status = "{\"chA\":\"" + String(invertChannelA ? "INVERTED" : "NORMAL") + "\",\"chB\":\"" + String(invertChannelB ? "INVERTED" : "NORMAL") + "\"}";
+  server.send(200, "application/json", status);
+}
+
+void handleStatus() {
+  String json = "{";
+  json += "\"speed\":" + String(manualSpeed) + ",";
+  json += "\"chA\":\"" + String(invertChannelA ? "INVERTED" : "NORMAL") + "\",";
+  json += "\"chB\":\"" + String(invertChannelB ? "INVERTED" : "NORMAL") + "\",";
+  json += "\"obstacle\":" + String(obstacleMode ? "true" : "false");
+  json += "}";
+  server.send(200, "application/json", json);
 }
 
 void handleMode() {
@@ -329,10 +620,12 @@ void handleMode() {
     forwardCmd = false; backCmd = false; leftCmd = false; rightCmd = false;
     autoState = AUTO_FORWARD;
     autoStateStart = millis();
+    Serial.println("[MODE] Obstacle Avoidance ON");
   } else {
     obstacleMode = false;
     autoState = AUTO_IDLE;
     driveStop();
+    Serial.println("[MODE] Obstacle Avoidance OFF");
   }
 
   server.send(200, "text/plain", "Mode set");
@@ -356,9 +649,11 @@ void setup() {
   pinMode(ENA_PIN, OUTPUT);
   pinMode(ENB_PIN, OUTPUT);
 
-  // ESP32 Arduino Core 3.x LEDC Configuration
+  // PWM Configuration
+#if defined(ESP_ARDUINO_VERSION_MAJOR) && ESP_ARDUINO_VERSION_MAJOR >= 3
   ledcAttach(ENA_PIN, PWM_FREQ, PWM_RES);
   ledcAttach(ENB_PIN, PWM_FREQ, PWM_RES);
+#endif
 
   driveStop();
 
@@ -388,6 +683,9 @@ void setup() {
   // Server Routing
   server.on("/", handleRoot);
   server.on("/cmd", handleCmd);
+  server.on("/speed", handleSpeed);
+  server.on("/invert", handleInvert);
+  server.on("/status", handleStatus);
   server.on("/mode", handleMode);
   server.onNotFound(handleNotFound);
 
