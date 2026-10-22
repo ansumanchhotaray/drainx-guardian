@@ -41,6 +41,26 @@ The ESP32 WROOM reads all the sensors and sends the data directly to the Python 
 
 ---
 
+## 3. Motor Node (ESP32 WROOM + L298N)
+The Motor Node receives driving commands (forward, backward, left, right, stop) from the server and drives the wheels.
+- **Code**: Upload `Guardian/MotorNode/MotorNode.ino` to this board.
+- **Auto-Discovery**: Sends UDP broadcast beacons on port 5005 (`role: "motor"`), automatically appearing on the web dashboard.
+
+### Pinout (L298N Dual H-Bridge)
+- **IN1** -> **GPIO 14** (Channel A — Left Side)
+- **IN2** -> **GPIO 27**
+- **IN3** -> **GPIO 26** (Channel B — Right Side)
+- **IN4** -> **GPIO 18** (Channel B — Right Side)
+- **ENA** -> **GPIO 33** (PWM Speed)
+- **ENB** -> **GPIO 32** (PWM Speed)
+
+### Power Connections
+- **L298N 12V** -> Battery (+) [7.4V - 12V]
+- **L298N GND** -> Battery (-) AND ESP32 GND (Common Ground is mandatory)
+- **ESP32 5V/VIN** -> L298N 5V Out (or separate 5V regulator/USB)
+
+---
+
 ## How to Upload the Code
 
 ### For the ESP32 WROOM (Sensor Node):

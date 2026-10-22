@@ -4,11 +4,12 @@ An autonomous drainage monitoring system that uses a two-board ESP32 architectur
 
 ## Architecture Overview
 
-This project uses a **Two-Board Architecture** to ensure maximum stability and bypass hardware limitations on the ESP32-CAM:
-1. **Camera Node (ESP32-CAM)**: Dedicated entirely to streaming MJPEG video over HTTP (port 81).
-2. **Sensor Node (ESP32 WROOM)**: Dedicated to reading analog sensors and pushing data to the server via HTTP POST.
-3. **Backend Server (Python/FastAPI)**: Receives sensor data (POST `/api/sensors`), proxies and processes the camera MJPEG stream for garbage detection (`/video_feed`), and broadcasts sensor data to the frontend via WebSockets (`/ws`).
-4. **Frontend Dashboard**: A modern, glassmorphic UI that displays the processed live video stream and real-time sensor data.
+This project uses a modular multi-node architecture to ensure maximum stability and bypass hardware limitations on individual ESP32 boards:
+1. **Camera Node (ESP32-CAM)**: Dedicated entirely to streaming video snapshots (`/capture`).
+2. **Sensor Node (ESP32 WROOM)**: Dedicated to reading analog sensors (Turbidity, pH, Temperature) and serving data (`/sensors`).
+3. **Motor Node (ESP32 WROOM)**: Dedicated to robot propulsion via L298N dual H-bridge motor driver (`/move`, `/speed`, `/status`).
+4. **Backend Server (Python/FastAPI)**: Auto-discovers all nodes via UDP beacons on port 5005, proxies AI vision, streams telemetry via WebSockets (`/ws`), and dispatches motor drive commands (`/api/motor`).
+5. **Frontend Dashboard**: A modern, glassmorphic UI that displays the processed live camera feed, real-time sensor telemetry, and interactive directional motor drive controls.
 
 ## 1. Hardware Setup (ESP32)
 

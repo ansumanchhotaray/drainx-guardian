@@ -16,6 +16,12 @@ document.addEventListener('DOMContentLoaded', () => {
     const sensorDetail = document.getElementById('sensor-detail');
     const sensorMacBadge = document.getElementById('sensor-mac-badge');
 
+    const motorDot = document.getElementById('motor-dot');
+    const motorDetail = document.getElementById('motor-detail');
+    const motorMacBadge = document.getElementById('motor-mac-badge');
+    const motorBadge = document.getElementById('motor-badge');
+    const motorControls = document.getElementById('motor-controls');
+
     // Manual controls toggles
     const toggleCamBtn = document.getElementById('toggle-cam-manual');
     const camManualControls = document.getElementById('cam-manual-controls');
@@ -81,6 +87,35 @@ document.addEventListener('DOMContentLoaded', () => {
             sensorDetail.textContent = 'Scanning network for Sensor Node...';
             sensorMacBadge.textContent = 'MAC: Auto';
         }
+
+        // --- Motor Node ---
+        if (nodes.motor) {
+            const motor = nodes.motor;
+            if (motor.status === 'online') {
+                if (motorDot) motorDot.className = 'status-dot online';
+                if (motorDetail) motorDetail.textContent = `Connected (${motor.ip})`;
+                if (motorMacBadge) motorMacBadge.textContent = `MAC: ${motor.mac}`;
+                if (motorBadge) motorBadge.textContent = 'Online';
+                if (motorControls) {
+                    motorControls.style.opacity = '1';
+                    motorControls.style.pointerEvents = 'auto';
+                }
+            } else {
+                if (motorDot) motorDot.className = 'status-dot offline';
+                if (motorDetail) motorDetail.textContent = `Offline (${motor.ip || 'Motor Node'})`;
+                if (motorMacBadge) motorMacBadge.textContent = `MAC: ${motor.mac}`;
+                if (motorBadge) motorBadge.textContent = 'Offline';
+                if (motorControls) {
+                    motorControls.style.opacity = '0.4';
+                    motorControls.style.pointerEvents = 'none';
+                }
+            }
+        } else {
+            if (motorDot) motorDot.className = 'status-dot searching';
+            if (motorDetail) motorDetail.textContent = 'Scanning network for Motor Node...';
+            if (motorMacBadge) motorMacBadge.textContent = 'MAC: Auto';
+            if (motorBadge) motorBadge.textContent = 'Searching...';
+        }
     }
 
     // Initial query for currently discovered nodes
@@ -88,6 +123,14 @@ document.addEventListener('DOMContentLoaded', () => {
         .then(res => res.json())
         .then(nodes => updateNodes(nodes))
         .catch(err => console.log('Could not fetch nodes initial state:', err));
+
+    // Periodic polling to guarantee dashboard status is always fresh (every 2.5s)
+    setInterval(() => {
+        fetch('/api/nodes')
+            .then(res => res.json())
+            .then(nodes => updateNodes(nodes))
+            .catch(() => {});
+    }, 2500);
 
     function connectWebSocket() {
         ws = new WebSocket(wsUrl);
@@ -260,6 +303,90 @@ document.addEventListener('DOMContentLoaded', () => {
                 connectSensorBtn.textContent = 'Connect Sensors';
             }
             connectSensorBtn.disabled = false;
+        });
+    }
+
+    // --- Motor Control Handlers ---
+    window.sendMotor = async function(dir, dur = 0) {
+        try {
+            await fetch('/api/motor', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ dir: dir, dur: dur })
+            });
+        } catch (e) {
+            console.error('Motor command error:', e);
+        }
+    };
+
+    document.querySelectorAll('.motor-btn').forEach(btn => {
+        const dir = btn.dataset.dir;
+        btn.addEventListener('pointerdown', (e) => {
+            e.preventDefault();
+            sendMotor(dir);
+            btn.style.opacity = '0.7';
+        });
+        btn.addEventListener('pointerup', () => {
+            sendMotor('s');
+            btn.style.opacity = '1';
+        });
+        btn.addEventListener('pointerleave', () => {
+            sendMotor('s');
+            btn.style.opacity = '1';
+        });
+        btn.addEventListener('pointercancel', () => {
+            sendMotor('s');
+            btn.style.opacity = '1';
+        });
+    });
+
+    // Manual Motor Connection Logic
+    const toggleMotorBtn = document.getElementById('toggle-motor-manual');
+    const motorManualControls = document.getElementById('motor-manual-controls');
+    if (toggleMotorBtn && motorManualControls) {
+        toggleMotorBtn.addEventListener('click', () => {
+            const isHidden = motorManualControls.classList.toggle('hidden');
+            toggleMotorBtn.textContent = isHidden ? 'Manual IP Override ▾' : 'Hide Manual Override ▴';
+        });
+    }
+
+    const connectMotorBtn = document.getElementById('connect-motor');
+    const motorIpInput = document.getElementById('motor-ip');
+    if (connectMotorBtn && motorIpInput) {
+        connectMotorBtn.addEventListener('click', async () => {
+            const ip = motorIpInput.value.trim();
+            if (!ip) {
+                alert("Please enter the Motor Node IP address.");
+                return;
+            }
+
+            connectMotorBtn.textContent = 'Connecting...';
+            connectMotorBtn.disabled = true;
+
+            try {
+                const resp = await fetch('/api/set_motor_node', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ ip: ip })
+                });
+                const data = await resp.json();
+
+                if (data.status === 'ok') {
+                    connectMotorBtn.textContent = 'Connected';
+                    connectMotorBtn.style.backgroundColor = 'var(--success)';
+                    if (motorControls) {
+                        motorControls.style.opacity = '1';
+                        motorControls.style.pointerEvents = 'auto';
+                    }
+                } else {
+                    alert(`Server error: ${data.message}`);
+                    connectMotorBtn.textContent = 'Connect Motor';
+                }
+            } catch (e) {
+                alert("Could not reach the Python server.");
+                connectMotorBtn.textContent = 'Connect Motor';
+            }
+            connectMotorBtn.disabled = false;
         });
     }
 });

@@ -29,8 +29,12 @@ latest_sensor_data = {
 
 discovered_nodes: Dict[str, Optional[dict]] = {
     "camera": None,
-    "sensor": None
+    "sensor": None,
+    "motor": None
 }
+
+# Motor node URL -- set on discovery, used by /api/motor
+_motor_url: Optional[str] = None
 
 class ConnectionManager:
     def __init__(self):
@@ -66,9 +70,25 @@ manager = ConnectionManager()
 # --- Static files & root ---
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
+@app.middleware("http")
+async def add_no_cache_header(request: Request, call_next):
+    response = await call_next(request)
+    if request.url.path.startswith("/static") or request.url.path == "/" or request.url.path.startswith("/api"):
+        response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate, max-age=0"
+        response.headers["Pragma"] = "no-cache"
+        response.headers["Expires"] = "0"
+    return response
+
 @app.get("/")
 async def get_index():
-    return FileResponse("static/index.html")
+    return FileResponse(
+        "static/index.html",
+        headers={
+            "Cache-Control": "no-cache, no-store, must-revalidate, max-age=0",
+            "Pragma": "no-cache",
+            "Expires": "0"
+        }
+    )
 
 # --- Node Discovery & Status ---
 @app.get("/api/nodes")
@@ -77,9 +97,9 @@ async def get_nodes():
     return discovered_nodes
 
 async def handle_discovered_node(msg: dict, sender_ip: str):
-    global _sensor_url
+    global _sensor_url, _motor_url
     role = msg.get("role")
-    if role not in ("camera", "sensor"):
+    if role not in ("camera", "sensor", "motor"):
         return
 
     mac = str(msg.get("mac", "UNKNOWN")).upper()
@@ -94,7 +114,12 @@ async def handle_discovered_node(msg: dict, sender_ip: str):
         prev_node.get("mac") != mac
     )
 
-    url = f"http://{node_ip}:{port}/capture" if role == "camera" else f"http://{node_ip}:{port}/sensors"
+    if role == "camera":
+        url = f"http://{node_ip}:{port}/capture"
+    elif role == "sensor":
+        url = f"http://{node_ip}:{port}/sensors"
+    else:  # motor
+        url = f"http://{node_ip}:{port}/move"
 
     discovered_nodes[role] = {
         "role": role,
@@ -113,6 +138,9 @@ async def handle_discovered_node(msg: dict, sender_ip: str):
         elif role == "sensor":
             _sensor_url = url
             print(f"[Discovery] Sensor polling URL updated to: {_sensor_url}")
+        elif role == "motor":
+            _motor_url = url
+            print(f"[Discovery] Motor node URL updated to: {_motor_url}")
 
         await manager.broadcast({
             "type": "node_update",
@@ -156,7 +184,7 @@ async def monitor_node_liveness():
         changed = False
         for role, node in list(discovered_nodes.items()):
             if node and node.get("status") == "online":
-                if now - node.get("last_seen", 0) > 8:
+                if now - node.get("last_seen", 0) > 18:
                     node["status"] = "offline"
                     changed = True
                     print(f"[Discovery] {role.upper()} node (MAC: {node.get('mac')}) timed out (offline)")
@@ -260,6 +288,51 @@ async def set_sensor_node(request: Request):
     _sensor_url = url
     print(f"[Server] Sensor URL updated to: {_sensor_url}")
     return {"status": "ok", "url": url}
+
+# --- Motor Node Control ---
+@app.post("/api/motor")
+async def motor_command(request: Request):
+    """
+    Send a movement command to the Motor Node.
+    Body: { "dir": "f"|"b"|"l"|"r"|"s", "dur": <ms optional>, "speed": <150-255 optional> }
+    """
+    global _motor_url
+    import httpx
+    body = await request.json()
+    dir_cmd = body.get("dir", "s")
+    dur     = body.get("dur", 0)
+    speed   = body.get("speed", None)
+
+    if not _motor_url:
+        # Check if motor node is in discovered_nodes but _motor_url not yet set
+        motor_node = discovered_nodes.get("motor")
+        if motor_node and motor_node.get("status") == "online":
+            _motor_url = motor_node["url"]
+        else:
+            return {"status": "error", "message": "Motor node not discovered yet"}
+
+    params = {"dir": dir_cmd, "dur": dur}
+    if speed:
+        params["speed"] = speed
+
+    try:
+        async with httpx.AsyncClient() as client:
+            resp = await client.get(_motor_url, params=params, timeout=3.0)
+            return {"status": "ok", "dir": dir_cmd, "motor_response": resp.text}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+@app.post("/api/set_motor_node")
+async def set_motor_node(request: Request):
+    """Manual IP override for the Motor Node."""
+    global _motor_url
+    body = await request.json()
+    ip = body.get("ip", "").strip()
+    if not ip:
+        return {"status": "error", "message": "ip is required"}
+    _motor_url = f"http://{ip}/move"
+    print(f"[Server] Motor URL manually set to: {_motor_url}")
+    return {"status": "ok", "url": _motor_url}
 
 # --- WebSocket endpoint (used by the browser dashboard) ---
 @app.websocket("/ws")

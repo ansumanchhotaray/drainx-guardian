@@ -4,11 +4,14 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="0">
     <title>DrainX Guardian Dashboard</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;800&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="/static/style.css">
+    <link rel="stylesheet" href="/static/style.css?v=20261022_2">
 </head>
 
 <body>
@@ -57,6 +60,44 @@
                 <div class="controls manual-controls-container hidden" id="cam-manual-controls">
                     <input type="text" id="cam-ip" placeholder="ESP32-CAM IP (e.g. 192.168.137.x)" class="glass-input">
                     <button id="connect-cam" class="btn-primary">Connect Stream</button>
+                </div>
+            </section>
+
+            <!-- Motor Node Section -->
+            <section class="sensors-section glass-panel" style="margin-bottom:1rem; padding:1rem 1.2rem;">
+                <div class="panel-header">
+                    <h2>Motor Node</h2>
+                    <span class="badge" id="motor-badge">Searching...</span>
+                </div>
+                <div class="node-status-bar" id="motor-status-bar" style="margin-bottom: 0.5rem;">
+                    <div class="node-status-info">
+                        <span class="status-dot searching" id="motor-dot"></span>
+                        <span class="node-label">Motor Node:</span>
+                        <span class="node-detail" id="motor-detail">Scanning network for Motor Node...</span>
+                    </div>
+                    <span class="mac-badge" id="motor-mac-badge">MAC: Auto</span>
+                </div>
+                <button type="button" class="manual-toggle-btn" id="toggle-motor-manual">Manual IP Override ▾</button>
+                <div class="controls manual-controls-container hidden" id="motor-manual-controls">
+                    <input type="text" id="motor-ip" placeholder="Motor Node IP (e.g. 192.168.137.x)" class="glass-input">
+                    <button id="connect-motor" class="btn-primary">Connect Motor</button>
+                </div>
+                <!-- Drive Controls -->
+                <div id="motor-controls" style="margin-top:1rem; text-align:center; opacity:0.4; pointer-events:none;" >
+                    <div style="margin-bottom:0.5rem;">
+                        <button class="btn-primary motor-btn" data-dir="f" style="min-width:120px;">▲ Forward</button>
+                    </div>
+                    <div style="display:flex; gap:0.5rem; justify-content:center; margin-bottom:0.5rem;">
+                        <button class="btn-primary motor-btn" data-dir="l" style="min-width:100px;">◄ Left</button>
+                        <button class="btn-primary" onclick="sendMotor('s')" style="min-width:100px; background:var(--danger);">■ Stop</button>
+                        <button class="btn-primary motor-btn" data-dir="r" style="min-width:100px;">Right ►</button>
+                    </div>
+                    <div>
+                        <button class="btn-primary motor-btn" data-dir="b" style="min-width:120px;">▼ Backward</button>
+                    </div>
+                    <div style="margin-top:0.8rem; font-size:0.85rem; color:var(--text-muted);">
+                        Hold to move · Release to stop
+                    </div>
                 </div>
             </section>
 
@@ -128,7 +169,7 @@
         </main>
     </div>
 
-    <script src="/static/script.js"></script>
+    <script src="/static/script.js?v=20261022_2"></script>
 </body>
 
 </html>
