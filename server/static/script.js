@@ -66,7 +66,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         } else {
             camDot.className = 'status-dot searching';
-            camDetail.textContent = 'Scanning network for ESP32-CAM...';
+            camDetail.textContent = 'Scanning...';
             camMacBadge.textContent = 'MAC: Auto';
         }
 
@@ -84,7 +84,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         } else {
             sensorDot.className = 'status-dot searching';
-            sensorDetail.textContent = 'Scanning network for Sensor Node...';
+            sensorDetail.textContent = 'Scanning...';
             sensorMacBadge.textContent = 'MAC: Auto';
         }
 
@@ -112,7 +112,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         } else {
             if (motorDot) motorDot.className = 'status-dot searching';
-            if (motorDetail) motorDetail.textContent = 'Scanning network for Motor Node...';
+            if (motorDetail) motorDetail.textContent = 'Scanning...';
             if (motorMacBadge) motorMacBadge.textContent = 'MAC: Auto';
             if (motorBadge) motorBadge.textContent = 'Searching...';
         }
