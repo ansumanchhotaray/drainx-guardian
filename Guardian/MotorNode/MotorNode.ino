@@ -77,7 +77,7 @@ const int PWM_RES  = 8;      // 8-bit: 0-255
 // =====================================================
 // Runtime State
 // =====================================================
-uint8_t motorSpeed    = 230;   // Default drive speed (230/255)
+uint8_t motorSpeed    = 150;   // Default drive speed (150/255)
 bool invertChannelA   = false; // Flip left-side direction in software
 bool invertChannelB   = false; // Flip right-side direction in software
 String currentDir     = "s";   // Last commanded direction
@@ -96,9 +96,6 @@ void applyPWM(uint8_t leftSpeed, uint8_t rightSpeed) {
   analogWrite(ENA_PIN, leftSpeed);
   analogWrite(ENB_PIN, rightSpeed);
 #endif
-  // Digital fallback to guarantee the enable pins are HIGH when moving
-  digitalWrite(ENA_PIN, leftSpeed  > 0 ? HIGH : LOW);
-  digitalWrite(ENB_PIN, rightSpeed > 0 ? HIGH : LOW);
 }
 
 void setChannelA(bool forward) {
@@ -212,12 +209,15 @@ void handleMove() {
     "{\"ok\":true,\"dir\":\"" + dir + "\",\"dur\":" + String(dur) + "}");
 }
 
-// GET /speed?val=150-255
+// GET /speed?val=100-255
 void handleSpeed() {
   if (server.hasArg("val")) {
     int s = server.arg("val").toInt();
     if (s >= 100 && s <= 255) {
       motorSpeed = (uint8_t)s;
+      if (currentDir != "s") {
+        applyPWM(motorSpeed, motorSpeed);
+      }
       Serial.printf("[MOTOR] Speed updated to %d\n", motorSpeed);
     }
   }

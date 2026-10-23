@@ -307,17 +307,35 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // --- Motor Control Handlers ---
+    const motorSpeedSelect = document.getElementById('motor-speed');
+
     window.sendMotor = async function(dir, dur = 0) {
+        const speed = motorSpeedSelect ? parseInt(motorSpeedSelect.value, 10) : 150;
         try {
             await fetch('/api/motor', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ dir: dir, dur: dur })
+                body: JSON.stringify({ dir: dir, dur: dur, speed: speed })
             });
         } catch (e) {
             console.error('Motor command error:', e);
         }
     };
+
+    if (motorSpeedSelect) {
+        motorSpeedSelect.addEventListener('change', async () => {
+            const speed = parseInt(motorSpeedSelect.value, 10);
+            try {
+                await fetch('/api/motor_speed', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ speed: speed })
+                });
+            } catch (e) {
+                console.error('Motor speed update error:', e);
+            }
+        });
+    }
 
     document.querySelectorAll('.motor-btn').forEach(btn => {
         const dir = btn.dataset.dir;

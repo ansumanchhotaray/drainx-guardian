@@ -322,6 +322,29 @@ async def motor_command(request: Request):
     except Exception as e:
         return {"status": "error", "message": str(e)}
 
+@app.post("/api/motor_speed")
+async def motor_speed_command(request: Request):
+    """Update the drive speed on the Motor Node."""
+    global _motor_url
+    import httpx
+    body = await request.json()
+    speed = body.get("speed", 150)
+
+    if not _motor_url:
+        motor_node = discovered_nodes.get("motor")
+        if motor_node and motor_node.get("status") == "online":
+            _motor_url = motor_node["url"]
+        else:
+            return {"status": "error", "message": "Motor node not discovered yet"}
+
+    speed_url = _motor_url.rsplit("/", 1)[0] + "/speed"
+    try:
+        async with httpx.AsyncClient() as client:
+            resp = await client.get(speed_url, params={"val": speed}, timeout=3.0)
+            return {"status": "ok", "speed": resp.text}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
 @app.post("/api/set_motor_node")
 async def set_motor_node(request: Request):
     """Manual IP override for the Motor Node."""
