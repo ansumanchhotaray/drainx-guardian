@@ -64,7 +64,8 @@ void broadcastBeacon() {
 #define IN1     14   // Channel A — Left Side
 #define IN2     27
 #define IN3     26   // Channel B — Right Side
-#define IN4     18   // Remapped: GPIO 25 was found non-functional
+#define IN4     25   // Original IN4 pin (D25)
+#define IN4_ALT 18   // Alternate IN4 pin (D18) — driven in parallel with D25
 #define ENA_PIN 33
 #define ENB_PIN 32
 
@@ -106,8 +107,9 @@ void setChannelA(bool forward) {
 
 void setChannelB(bool forward) {
   bool d = invertChannelB ? !forward : forward;
-  digitalWrite(IN3, d ? HIGH : LOW);
-  digitalWrite(IN4, d ? LOW  : HIGH);
+  digitalWrite(IN3,     d ? HIGH : LOW);
+  digitalWrite(IN4,     d ? LOW  : HIGH);
+  digitalWrite(IN4_ALT, d ? LOW  : HIGH);
 }
 
 // =====================================================
@@ -115,7 +117,7 @@ void setChannelB(bool forward) {
 // =====================================================
 void driveStop() {
   digitalWrite(IN1, LOW); digitalWrite(IN2, LOW);
-  digitalWrite(IN3, LOW); digitalWrite(IN4, LOW);
+  digitalWrite(IN3, LOW); digitalWrite(IN4, LOW); digitalWrite(IN4_ALT, LOW);
   applyPWM(0, 0);
   currentDir = "s";
   timedMove  = false;
@@ -250,7 +252,7 @@ void setup() {
 
   // Configure motor control pins
   pinMode(IN1, OUTPUT); pinMode(IN2, OUTPUT);
-  pinMode(IN3, OUTPUT); pinMode(IN4, OUTPUT);
+  pinMode(IN3, OUTPUT); pinMode(IN4, OUTPUT); pinMode(IN4_ALT, OUTPUT);
   pinMode(ENA_PIN, OUTPUT); pinMode(ENB_PIN, OUTPUT);
 
   // Attach PWM channels (ESP32 Arduino Core 3.x style)
