@@ -61,6 +61,18 @@ The Motor Node receives driving commands (forward, backward, left, right, stop) 
 
 ---
 
+## 4. Arm Node (Arduino Uno + Servo)
+The Arm Node controls the robotic collector arm used to pick up debris from the drain.
+- **Code**: Upload `Guardian/ArmNode/ArmNode.ino` to the Arduino Uno.
+- **Communication**: Connect Arduino Uno to the host computer running the server via standard USB cable. The server automatically detects the COM port and communicates via USB Serial (115200 baud).
+
+### Pinout & Connections
+- **Servo Signal Pin** (Orange / Yellow wire) -> **Digital Pin 9** (PWM) on Arduino Uno.
+- **Servo VCC** (Red wire) -> External 5V DC Power Source (Servos draw high peak currents under load).
+- **Servo GND** (Brown / Black wire) -> Power Supply GND **AND** Arduino Uno GND (**Common Ground is mandatory**).
+
+---
+
 ## How to Upload the Code
 
 ### For the ESP32 WROOM (Sensor Node):

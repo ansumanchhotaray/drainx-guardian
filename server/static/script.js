@@ -21,6 +21,16 @@ document.addEventListener('DOMContentLoaded', () => {
     const motorMacBadge = document.getElementById('motor-mac-badge');
     const motorBadge = document.getElementById('motor-badge');
     const motorControls = document.getElementById('motor-controls');
+
+    const armDot = document.getElementById('arm-dot');
+    const armDetail = document.getElementById('arm-detail');
+    const armMacBadge = document.getElementById('arm-mac-badge');
+    const armBadge = document.getElementById('arm-badge');
+    const armControls = document.getElementById('arm-controls');
+    const armSlider = document.getElementById('arm-slider');
+    const armAngleVal = document.getElementById('arm-angle-val');
+    let isUserDraggingArm = false;
+
     const debrisBadge = document.getElementById('debris-badge');
     const aiVisionBadge = document.getElementById('ai-vision-badge');
     const annotationLayer = document.getElementById('annotation-layer');
@@ -176,6 +186,39 @@ document.addEventListener('DOMContentLoaded', () => {
             if (motorBadge) motorBadge.textContent = 'Searching...';
         }
 
+        // --- Arm Node (Arduino Uno) ---
+        if (nodes.arm) {
+            const arm = nodes.arm;
+            if (arm.status === 'online') {
+                if (armDot) armDot.className = 'status-dot online';
+                if (armDetail) armDetail.textContent = `Connected (${arm.port || arm.ip || 'Arduino'})`;
+                if (armMacBadge) armMacBadge.textContent = arm.mac || `PORT: ${arm.port || 'USB'}`;
+                if (armBadge) armBadge.textContent = 'Online';
+                if (armControls) {
+                    armControls.style.opacity = '1';
+                    armControls.style.pointerEvents = 'auto';
+                }
+            } else {
+                if (armDot) armDot.className = 'status-dot offline';
+                if (armDetail) armDetail.textContent = `Offline (${arm.port || arm.ip || 'Arduino'})`;
+                if (armMacBadge) armMacBadge.textContent = arm.mac || 'PORT: Auto';
+                if (armBadge) armBadge.textContent = 'Offline';
+                if (armControls) {
+                    armControls.style.opacity = '0.4';
+                    armControls.style.pointerEvents = 'none';
+                }
+            }
+            if (arm.angle !== undefined && !isUserDraggingArm) {
+                if (armSlider) armSlider.value = arm.angle;
+                if (armAngleVal) armAngleVal.textContent = `${arm.angle}°`;
+            }
+        } else {
+            if (armDot) armDot.className = 'status-dot searching';
+            if (armDetail) armDetail.textContent = 'Scanning USB...';
+            if (armMacBadge) armMacBadge.textContent = 'PORT: Auto';
+            if (armBadge) armBadge.textContent = 'Searching...';
+        }
+
         // --- Vision Debris Detection ---
         if (nodes.vision) {
             updateVisionStatus(nodes.vision);
@@ -217,6 +260,12 @@ document.addEventListener('DOMContentLoaded', () => {
                     if (data.nodes) updateNodes(data.nodes);
                 } else if (data.type === 'vision_update') {
                     if (data.vision) updateVisionStatus(data.vision);
+                } else if (data.type === 'arm_update') {
+                    if (data.angle !== undefined && !isUserDraggingArm) {
+                        if (armSlider) armSlider.value = data.angle;
+                        if (armAngleVal) armAngleVal.textContent = `${data.angle}°`;
+                    }
+                    if (data.nodes) updateNodes(data.nodes);
                 } else {
                     // Sensor data or other broadcast
                     updateDashboard(data);
@@ -472,6 +521,122 @@ document.addEventListener('DOMContentLoaded', () => {
                 connectMotorBtn.textContent = 'Connect Motor';
             }
             connectMotorBtn.disabled = false;
+        });
+    }
+
+    // --- Arm Node Control Handlers (Robotic Collector Arm - Arduino Uno) ---
+    let lastArmSendTime = 0;
+    let pendingArmTimeout = null;
+
+    async function sendArmAngle(angle) {
+        angle = parseInt(angle, 10);
+        if (isNaN(angle)) return;
+        angle = Math.max(0, Math.min(180, angle));
+        if (armAngleVal) armAngleVal.textContent = `${angle}°`;
+
+        try {
+            await fetch('/api/arm', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ angle: angle })
+            });
+        } catch (e) {
+            console.error('Arm command error:', e);
+        }
+    }
+
+    if (armSlider) {
+        armSlider.addEventListener('input', (e) => {
+            isUserDraggingArm = true;
+            const angle = parseInt(e.target.value, 10);
+            if (armAngleVal) armAngleVal.textContent = `${angle}°`;
+
+            // Throttle sending commands to at most once per 60ms
+            const now = Date.now();
+            if (now - lastArmSendTime > 60) {
+                lastArmSendTime = now;
+                sendArmAngle(angle);
+            } else {
+                clearTimeout(pendingArmTimeout);
+                pendingArmTimeout = setTimeout(() => {
+                    sendArmAngle(angle);
+                }, 60);
+            }
+        });
+
+        armSlider.addEventListener('change', (e) => {
+            isUserDraggingArm = false;
+            sendArmAngle(e.target.value);
+        });
+    }
+
+    // Preset angle buttons (0, 45, 90, 135, 180)
+    document.querySelectorAll('.arm-preset').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const angle = parseInt(btn.dataset.angle, 10);
+            if (armSlider) armSlider.value = angle;
+            sendArmAngle(angle);
+        });
+    });
+
+    // Nudge buttons (-5 / +5)
+    document.querySelectorAll('.arm-nudge').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const delta = parseInt(btn.dataset.delta, 10);
+            const current = armSlider ? parseInt(armSlider.value, 10) : 90;
+            const newAngle = Math.max(0, Math.min(180, current + delta));
+            if (armSlider) armSlider.value = newAngle;
+            sendArmAngle(newAngle);
+        });
+    });
+
+    // Manual Arm Node Connection Logic
+    const toggleArmBtn = document.getElementById('toggle-arm-manual');
+    const armManualControls = document.getElementById('arm-manual-controls');
+    if (toggleArmBtn && armManualControls) {
+        toggleArmBtn.addEventListener('click', () => {
+            const isHidden = armManualControls.classList.toggle('hidden');
+            toggleArmBtn.textContent = isHidden ? 'Manual Port Override ▾' : 'Hide Manual Override ▴';
+        });
+    }
+
+    const connectArmBtn = document.getElementById('connect-arm');
+    const armPortInput = document.getElementById('arm-port');
+    if (connectArmBtn && armPortInput) {
+        connectArmBtn.addEventListener('click', async () => {
+            const port = armPortInput.value.trim();
+            if (!port) {
+                alert("Please enter a COM port (e.g. COM3) or IP.");
+                return;
+            }
+
+            connectArmBtn.textContent = 'Connecting...';
+            connectArmBtn.disabled = true;
+
+            try {
+                const resp = await fetch('/api/set_arm_node', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ port: port })
+                });
+                const data = await resp.json();
+
+                if (data.status === 'ok') {
+                    connectArmBtn.textContent = 'Connected';
+                    connectArmBtn.style.backgroundColor = 'var(--success)';
+                    if (armControls) {
+                        armControls.style.opacity = '1';
+                        armControls.style.pointerEvents = 'auto';
+                    }
+                } else {
+                    alert(`Error: ${data.message || 'Could not connect'}`);
+                    connectArmBtn.textContent = 'Connect';
+                }
+            } catch (e) {
+                alert("Could not reach Python server.");
+                connectArmBtn.textContent = 'Connect';
+            }
+            connectArmBtn.disabled = false;
         });
     }
 });

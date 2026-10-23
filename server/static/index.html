@@ -11,7 +11,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;800&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="/static/style.css?v=20261023_11">
+    <link rel="stylesheet" href="/static/style.css?v=20261023_12">
 </head>
 
 <body>
@@ -166,11 +166,57 @@
                         <button class="btn-primary motor-btn" data-dir="b">▼ Back</button>
                     </div>
                 </div>
+
+                <!-- Arm Node (Robotic Collector Arm - Arduino Uno) -->
+                <div class="arm-panel glass-panel" id="arm-panel">
+                    <div class="arm-panel-header">
+                        <div class="arm-title-group">
+                            <span class="arm-icon">🦾</span>
+                            <span class="arm-title">Collector Arm</span>
+                        </div>
+                        <div class="arm-header-actions">
+                            <span class="arm-angle-pill" id="arm-angle-val">90°</span>
+                            <span class="badge" id="arm-badge">Searching...</span>
+                        </div>
+                    </div>
+                    <div class="node-status-bar" id="arm-status-bar" style="margin-bottom: 0.5rem;">
+                        <div class="node-status-info">
+                            <span class="status-dot searching" id="arm-dot"></span>
+                            <span class="node-label">Arm:</span>
+                            <span class="node-detail" id="arm-detail">Scanning USB...</span>
+                        </div>
+                        <span class="mac-badge" id="arm-mac-badge">PORT: Auto</span>
+                    </div>
+                    <button type="button" class="manual-toggle-btn" id="toggle-arm-manual">Manual Port Override ▾</button>
+                    <div class="controls manual-controls-container hidden" id="arm-manual-controls" style="margin-bottom: 0.75rem;">
+                        <input type="text" id="arm-port" placeholder="Port e.g. COM3 or IP" class="glass-input">
+                        <button id="connect-arm" class="btn-primary">Connect</button>
+                    </div>
+                    <div class="arm-controls-body" id="arm-controls">
+                        <div class="arm-slider-container">
+                            <div class="arm-slider-labels">
+                                <span>0° (Retract)</span>
+                                <span class="mid-label">90°</span>
+                                <span>180° (Deploy)</span>
+                            </div>
+                            <input type="range" id="arm-slider" min="0" max="180" value="90" step="1" class="arm-range-input">
+                        </div>
+                        <div class="arm-preset-row">
+                            <button type="button" class="arm-btn arm-nudge" data-delta="-5" title="Step -5°">◀ -5°</button>
+                            <button type="button" class="arm-btn arm-preset" data-angle="0">0°</button>
+                            <button type="button" class="arm-btn arm-preset" data-angle="45">45°</button>
+                            <button type="button" class="arm-btn arm-preset" data-angle="90">90°</button>
+                            <button type="button" class="arm-btn arm-preset" data-angle="135">135°</button>
+                            <button type="button" class="arm-btn arm-preset" data-angle="180">180°</button>
+                            <button type="button" class="arm-btn arm-nudge" data-delta="5" title="Step +5°">+5° ▶</button>
+                        </div>
+                    </div>
+                </div>
             </section>
         </main>
     </div>
 
-    <script src="/static/script.js?v=20261023_11"></script>
+    <script src="/static/script.js?v=20261023_12"></script>
 </body>
 
 </html>
