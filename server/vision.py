@@ -74,11 +74,21 @@ _latest_frame: bytes = None
 _frame_lock = threading.Lock()
 _running = False
 _thread: threading.Thread = None
+_debris_detected: bool = False
+_detected_items: list[str] = []
+
+
+def get_detection_state() -> dict:
+    """Return current garbage/debris detection status for the web UI."""
+    return {
+        "debris_detected": _debris_detected,
+        "items": list(_detected_items)
+    }
 
 
 def annotate_frame(frame):
     """Run YOLO-World on a frame and draw bounding boxes, or stream raw frame while model loads."""
-    global _model
+    global _model, _debris_detected, _detected_items
     if _model is None:
         # AI model is still loading in background; show live feed with status label
         cv2.putText(
@@ -92,6 +102,7 @@ def annotate_frame(frame):
     try:
         results = _model(frame, verbose=False)[0]
         garbage_found = False
+        detected_list = []
         for box in results.boxes:
             cls_id = int(box.cls[0])
             conf = float(box.conf[0])
@@ -104,6 +115,7 @@ def annotate_frame(frame):
                 category, color = CLASS_TO_CATEGORY[obj_name]
                 
                 label = f"{obj_name} {conf:.0%}"
+                detected_list.append(label)
 
                 # Draw bounding box
                 cv2.rectangle(frame, (x1, y1), (x2, y2), color, 2)
@@ -127,14 +139,8 @@ def annotate_frame(frame):
                     (255, 255, 255), 1, cv2.LINE_AA
                 )
 
-        # Watermark when garbage is detected
-        if garbage_found:
-            cv2.putText(
-                frame, "DEBRIS DETECTED",
-                (10, frame.shape[0] - 10),
-                cv2.FONT_HERSHEY_SIMPLEX, 0.7,
-                (0, 0, 220), 2, cv2.LINE_AA
-            )
+        _debris_detected = garbage_found
+        _detected_items = detected_list
     except Exception as e:
         print(f"[Vision] Inference error: {e}")
 

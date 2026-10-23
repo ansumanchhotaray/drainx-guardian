@@ -21,6 +21,19 @@ document.addEventListener('DOMContentLoaded', () => {
     const motorMacBadge = document.getElementById('motor-mac-badge');
     const motorBadge = document.getElementById('motor-badge');
     const motorControls = document.getElementById('motor-controls');
+    const debrisBadge = document.getElementById('debris-badge');
+
+    function updateVisionStatus(vision) {
+        if (!debrisBadge || !vision) return;
+        if (vision.debris_detected) {
+            debrisBadge.className = 'debris-badge detected';
+            const itemsText = vision.items && vision.items.length ? `: ${vision.items.join(', ')}` : '';
+            debrisBadge.textContent = `⚠️ Debris Detected${itemsText}`;
+        } else {
+            debrisBadge.className = 'debris-badge clear';
+            debrisBadge.textContent = '✓ Clear';
+        }
+    }
 
     // Manual controls toggles
     const toggleCamBtn = document.getElementById('toggle-cam-manual');
@@ -116,6 +129,11 @@ document.addEventListener('DOMContentLoaded', () => {
             if (motorMacBadge) motorMacBadge.textContent = 'MAC: Auto';
             if (motorBadge) motorBadge.textContent = 'Searching...';
         }
+
+        // --- Vision Debris Detection ---
+        if (nodes.vision) {
+            updateVisionStatus(nodes.vision);
+        }
     }
 
     // Initial query for currently discovered nodes
@@ -151,6 +169,8 @@ document.addEventListener('DOMContentLoaded', () => {
                     if (data.sensor_data) updateDashboard(data.sensor_data);
                 } else if (data.type === 'node_update') {
                     if (data.nodes) updateNodes(data.nodes);
+                } else if (data.type === 'vision_update') {
+                    if (data.vision) updateVisionStatus(data.vision);
                 } else {
                     // Sensor data or other broadcast
                     updateDashboard(data);

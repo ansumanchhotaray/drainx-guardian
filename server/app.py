@@ -93,8 +93,8 @@ async def get_index():
 # --- Node Discovery & Status ---
 @app.get("/api/nodes")
 async def get_nodes():
-    """Return currently discovered ESP32 nodes and their MAC addresses."""
-    return discovered_nodes
+    """Return currently discovered ESP32 nodes, MAC addresses, and AI vision detection status."""
+    return {**discovered_nodes, "vision": vision.get_detection_state()}
 
 async def handle_discovered_node(msg: dict, sender_ip: str):
     global _sensor_url, _motor_url
@@ -260,6 +260,19 @@ async def poll_sensors():
                     print(f"[Sensor Poll Error] {e}")
             await asyncio.sleep(2)
 
+async def monitor_vision_status():
+    """Broadcasts AI debris detection updates to the dashboard in real time."""
+    last_state = None
+    while True:
+        await asyncio.sleep(0.25)
+        state = vision.get_detection_state()
+        if state != last_state:
+            last_state = state
+            await manager.broadcast({
+                "type": "vision_update",
+                "vision": state
+            })
+
 @app.on_event("startup")
 async def startup_event():
     global _sensor_task
@@ -272,6 +285,7 @@ async def startup_event():
     # Start background polling and liveness monitors
     _sensor_task = asyncio.create_task(poll_sensors())
     asyncio.create_task(monitor_node_liveness())
+    asyncio.create_task(monitor_vision_status())
 
 # --- Set the ESP32 Sensor Node URL (Manual Override) ---
 @app.post("/api/set_sensor_node")

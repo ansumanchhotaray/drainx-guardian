@@ -190,6 +190,38 @@ h1 span {
     border: 1px solid rgba(37, 99, 235, 0.25);
 }
 
+.vision-header-badges {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.debris-badge {
+    padding: 0.25rem 0.75rem;
+    border-radius: 10px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    transition: all 0.2s ease;
+}
+
+.debris-badge.clear {
+    background: rgba(5, 150, 105, 0.1);
+    color: var(--success);
+    border: 1px solid rgba(5, 150, 105, 0.25);
+}
+
+.debris-badge.detected {
+    background: rgba(220, 38, 38, 0.14);
+    color: var(--danger);
+    border: 1px solid rgba(220, 38, 38, 0.35);
+    animation: debris-pulse 1.2s infinite ease-in-out alternate;
+}
+
+@keyframes debris-pulse {
+    0% { box-shadow: 0 0 0 0 rgba(220, 38, 38, 0.25); }
+    100% { box-shadow: 0 0 0 5px rgba(220, 38, 38, 0); }
+}
+
 .video-container {
     position: relative;
     width: 100%;
