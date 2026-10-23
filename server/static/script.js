@@ -72,8 +72,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (!cameraStreamActive) {
                     cameraStreamActive = true;
                     camStream.src = `/video_feed?t=${Date.now()}`;
-                    const targetBox = document.querySelector('.target-box');
-                    if (targetBox) targetBox.style.display = 'block';
                 }
             } else {
                 camDot.className = 'status-dot offline';
@@ -275,8 +273,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (data.status === 'ok') {
                     cameraStreamActive = true;
                     camStream.src = `/video_feed?t=${Date.now()}`;
-                    const targetBox = document.querySelector('.target-box');
-                    if (targetBox) targetBox.style.display = 'block';
                     connectBtn.textContent = 'Reconnect';
                 } else {
                     alert(`Server error: ${data.message}`);
