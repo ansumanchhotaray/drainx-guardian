@@ -11,7 +11,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;800&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="/static/style.css?v=20261023_10">
+    <link rel="stylesheet" href="/static/style.css?v=20261023_11">
 </head>
 
 <body>
@@ -39,7 +39,7 @@
                     <h2>Live Camera Feed</h2>
                     <div class="vision-header-badges">
                         <span class="debris-badge clear" id="debris-badge">✓ Clear</span>
-                        <span class="badge">AI Vision Active</span>
+                        <span class="badge" id="ai-vision-badge">AI Vision Active</span>
                     </div>
                 </div>
                 <div class="video-container">
@@ -47,6 +47,7 @@
                     <img id="camera-stream"
                         src="https://via.placeholder.com/640x480.png?text=Waiting+for+Camera+Stream..."
                         alt="Live Stream">
+                    <div class="annotation-layer" id="annotation-layer"></div>
                 </div>
                 <div class="node-status-bar" id="cam-status-bar">
                     <div class="node-status-info">
@@ -169,7 +170,7 @@
         </main>
     </div>
 
-    <script src="/static/script.js?v=20261023_10"></script>
+    <script src="/static/script.js?v=20261023_11"></script>
 </body>
 
 </html>

@@ -22,19 +22,64 @@ document.addEventListener('DOMContentLoaded', () => {
     const motorBadge = document.getElementById('motor-badge');
     const motorControls = document.getElementById('motor-controls');
     const debrisBadge = document.getElementById('debris-badge');
+    const aiVisionBadge = document.getElementById('ai-vision-badge');
+    const annotationLayer = document.getElementById('annotation-layer');
     const videoSection = document.querySelector('.video-section');
 
     function updateVisionStatus(vision) {
-        if (!debrisBadge || !vision) return;
-        if (vision.debris_detected) {
-            debrisBadge.className = 'debris-badge detected';
-            const itemsText = vision.items && vision.items.length ? `: ${vision.items.join(', ')}` : '';
-            debrisBadge.textContent = `⚠️ Debris Detected${itemsText}`;
-            if (videoSection) videoSection.classList.add('debris-alert');
-        } else {
-            debrisBadge.className = 'debris-badge clear';
-            debrisBadge.textContent = '✓ Clear';
-            if (videoSection) videoSection.classList.remove('debris-alert');
+        if (!vision) return;
+
+        // 1. AI model status badge
+        if (aiVisionBadge) {
+            if (vision.model_ready === false) {
+                aiVisionBadge.textContent = 'AI Initializing...';
+                aiVisionBadge.className = 'badge loading';
+            } else {
+                aiVisionBadge.textContent = 'AI Vision Active';
+                aiVisionBadge.className = 'badge';
+            }
+        }
+
+        // 2. Debris detection status badge & container red tint alert
+        if (debrisBadge) {
+            if (vision.debris_detected) {
+                debrisBadge.className = 'debris-badge detected';
+                const itemsText = vision.items && vision.items.length ? `: ${vision.items.join(', ')}` : '';
+                debrisBadge.textContent = `⚠️ Debris Detected${itemsText}`;
+                if (videoSection) videoSection.classList.add('debris-alert');
+            } else {
+                debrisBadge.className = 'debris-badge clear';
+                debrisBadge.textContent = '✓ Clear';
+                if (videoSection) videoSection.classList.remove('debris-alert');
+            }
+        }
+
+        // 3. Web frontend bounding box annotations overlay
+        if (annotationLayer) {
+            annotationLayer.innerHTML = '';
+            if (vision.boxes && vision.boxes.length > 0) {
+                vision.boxes.forEach(box => {
+                    const boxEl = document.createElement('div');
+                    boxEl.className = 'vision-box';
+                    boxEl.style.left = `${box.x}%`;
+                    boxEl.style.top = `${box.y}%`;
+                    boxEl.style.width = `${box.w}%`;
+                    boxEl.style.height = `${box.h}%`;
+                    if (box.color) boxEl.style.borderColor = box.color;
+
+                    const labelEl = document.createElement('span');
+                    labelEl.className = 'vision-box-label';
+                    if (box.color) labelEl.style.backgroundColor = box.color;
+                    if (box.y < 8) {
+                        labelEl.style.top = '2px';
+                        labelEl.style.bottom = 'auto';
+                    }
+                    labelEl.textContent = `${box.label} ${box.conf}%`;
+
+                    boxEl.appendChild(labelEl);
+                    annotationLayer.appendChild(boxEl);
+                });
+            }
         }
     }
 

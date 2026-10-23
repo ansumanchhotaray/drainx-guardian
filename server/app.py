@@ -261,10 +261,10 @@ async def poll_sensors():
             await asyncio.sleep(2)
 
 async def monitor_vision_status():
-    """Broadcasts AI debris detection updates to the dashboard in real time."""
+    """Broadcasts AI debris detection and bounding box updates to dashboard in real time."""
     last_state = None
     while True:
-        await asyncio.sleep(0.25)
+        await asyncio.sleep(0.1)
         state = vision.get_detection_state()
         if state != last_state:
             last_state = state

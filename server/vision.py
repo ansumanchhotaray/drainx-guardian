@@ -22,20 +22,20 @@ DRAINAGE_CLASSES = [
     "plastic bottle"       # 11
 ]
 
-# Map the classes to our UI categories and colors
+# Map the classes to our UI categories and CSS colors
 CLASS_TO_CATEGORY = {
-    "plastic bottle cap": ("Plastic", (0, 0, 255)),
-    "metal bottle cap": ("Metal", (255, 165, 0)),
-    "plastic wrapper": ("Plastic", (0, 0, 255)),
-    "plastic bag": ("Plastic", (0, 0, 255)),
-    "six pack rings": ("Plastic", (0, 0, 255)),
-    "paper bag": ("Paper", (0, 255, 255)),
-    "scrap paper": ("Paper", (0, 255, 255)),
-    "cardboard": ("Paper", (0, 255, 255)),
-    "leaves": ("Bio", (0, 255, 0)),
-    "cigarette": ("Other", (128, 128, 128)),
-    "drink can": ("Metal", (255, 165, 0)),
-    "plastic bottle": ("Plastic", (0, 0, 255))
+    "plastic bottle cap": ("Plastic", "#ef4444"),
+    "metal bottle cap": ("Metal", "#f59e0b"),
+    "plastic wrapper": ("Plastic", "#ef4444"),
+    "plastic bag": ("Plastic", "#ef4444"),
+    "six pack rings": ("Plastic", "#ef4444"),
+    "paper bag": ("Paper", "#0284c7"),
+    "scrap paper": ("Paper", "#0284c7"),
+    "cardboard": ("Paper", "#0284c7"),
+    "leaves": ("Bio", "#10b981"),
+    "cigarette": ("Other", "#8b5cf6"),
+    "drink can": ("Metal", "#f59e0b"),
+    "plastic bottle": ("Plastic", "#ef4444")
 }
 
 _model = None
@@ -76,33 +76,35 @@ _running = False
 _thread: threading.Thread = None
 _debris_detected: bool = False
 _detected_items: list[str] = []
+_detected_boxes: list[dict] = []
 
 
 def get_detection_state() -> dict:
-    """Return current garbage/debris detection status for the web UI."""
+    """Return current garbage/debris detection status and bounding boxes for the web UI."""
     return {
         "debris_detected": _debris_detected,
-        "items": list(_detected_items)
+        "items": list(_detected_items),
+        "model_ready": _model is not None,
+        "boxes": list(_detected_boxes)
     }
 
 
-def annotate_frame(frame):
-    """Run YOLO-World on a frame and draw bounding boxes, or stream raw frame while model loads."""
-    global _model, _debris_detected, _detected_items
+def detect_objects(frame):
+    """Run YOLO-World on frame, updating detection state without modifying image pixels."""
+    global _model, _debris_detected, _detected_items, _detected_boxes
     if _model is None:
-        # AI model is still loading in background; show live feed with status label
-        cv2.putText(
-            frame, "AI Initializing...",
-            (10, 25),
-            cv2.FONT_HERSHEY_SIMPLEX, 0.6,
-            (0, 165, 255), 2, cv2.LINE_AA
-        )
-        return frame
+        _debris_detected = False
+        _detected_items = []
+        _detected_boxes = []
+        return
 
     try:
         results = _model(frame, verbose=False)[0]
         garbage_found = False
         detected_list = []
+        boxes_list = []
+        h, w = frame.shape[:2]
+
         for box in results.boxes:
             cls_id = int(box.cls[0])
             conf = float(box.conf[0])
@@ -117,38 +119,33 @@ def annotate_frame(frame):
                 label = f"{obj_name} {conf:.0%}"
                 detected_list.append(label)
 
-                # Draw bounding box
-                cv2.rectangle(frame, (x1, y1), (x2, y2), color, 2)
-
-                # Draw label pill background
-                (tw, th), _ = cv2.getTextSize(
-                    label, cv2.FONT_HERSHEY_SIMPLEX, 0.55, 1
-                )
-                cv2.rectangle(
-                    frame,
-                    (x1, y1 - th - 8),
-                    (x1 + tw + 6, y1),
-                    color, -1
-                )
-                
-                # Put white text inside the pill
-                cv2.putText(
-                    frame, label,
-                    (x1 + 3, y1 - 4),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.55,
-                    (255, 255, 255), 1, cv2.LINE_AA
-                )
+                # Normalized percentages for frontend CSS overlay (0-100%)
+                boxes_list.append({
+                    "label": obj_name,
+                    "category": category,
+                    "conf": int(round(conf * 100)),
+                    "color": color,
+                    "x": max(0.0, round(float(x1 / w * 100), 2)),
+                    "y": max(0.0, round(float(y1 / h * 100), 2)),
+                    "w": min(100.0, round(float((x2 - x1) / w * 100), 2)),
+                    "h": min(100.0, round(float((y2 - y1) / h * 100), 2)),
+                })
 
         _debris_detected = garbage_found
         _detected_items = detected_list
+        _detected_boxes = boxes_list
     except Exception as e:
         print(f"[Vision] Inference error: {e}")
 
+
+def annotate_frame(frame):
+    """Backward-compatible wrapper; runs detection without modifying frame pixels."""
+    detect_objects(frame)
     return frame
 
 
 def _poll_snapshots():
-    """Background thread: polls ESP32-CAM /capture endpoint, runs YOLO, stores annotated frame."""
+    """Background thread: polls ESP32-CAM /capture endpoint, runs YOLO, stores raw pristine frame."""
     global _latest_frame, _running
 
     # Start model loading in background without blocking the snapshot stream
@@ -169,7 +166,7 @@ def _poll_snapshots():
                 time.sleep(0.2)
                 continue
 
-            # Decode the JPEG image
+            # Decode the JPEG image for YOLO detection
             jpg_data = response.content
             frame = cv2.imdecode(
                 np.frombuffer(jpg_data, dtype=np.uint8),
@@ -180,13 +177,12 @@ def _poll_snapshots():
                 time.sleep(0.2)
                 continue
 
-            # Run YOLO inference or pass through live frame
-            frame = annotate_frame(frame)
+            # Run YOLO inference (clean, no image alteration)
+            detect_objects(frame)
 
-            # Encode the frame back to JPEG
-            _, jpeg = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 85])
+            # Store the pristine camera JPEG bytes directly (no re-encoding overhead)
             with _frame_lock:
-                _latest_frame = jpeg.tobytes()
+                _latest_frame = jpg_data
 
         except requests.exceptions.ConnectionError:
             print(f"[Vision] Cannot reach camera at {url}. Retrying in 2s...")
