@@ -166,6 +166,18 @@ h1 span {
     display: flex;
     flex-direction: column;
     gap: 0.75rem;
+    transition: background 0.3s ease, border-color 0.3s ease, box-shadow 0.3s ease;
+}
+
+.video-section.debris-alert {
+    background: linear-gradient(135deg, rgba(254, 226, 226, 0.92), rgba(254, 202, 202, 0.78));
+    border-color: rgba(220, 38, 38, 0.55);
+    box-shadow: 0 6px 24px rgba(220, 38, 38, 0.22);
+}
+
+.video-section.debris-alert .video-container {
+    border-color: rgba(220, 38, 38, 0.55);
+    box-shadow: 0 0 0 2px rgba(220, 38, 38, 0.2);
 }
 
 .panel-header {

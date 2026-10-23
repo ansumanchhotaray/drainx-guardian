@@ -22,6 +22,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const motorBadge = document.getElementById('motor-badge');
     const motorControls = document.getElementById('motor-controls');
     const debrisBadge = document.getElementById('debris-badge');
+    const videoSection = document.querySelector('.video-section');
 
     function updateVisionStatus(vision) {
         if (!debrisBadge || !vision) return;
@@ -29,9 +30,11 @@ document.addEventListener('DOMContentLoaded', () => {
             debrisBadge.className = 'debris-badge detected';
             const itemsText = vision.items && vision.items.length ? `: ${vision.items.join(', ')}` : '';
             debrisBadge.textContent = `⚠️ Debris Detected${itemsText}`;
+            if (videoSection) videoSection.classList.add('debris-alert');
         } else {
             debrisBadge.className = 'debris-badge clear';
             debrisBadge.textContent = '✓ Clear';
+            if (videoSection) videoSection.classList.remove('debris-alert');
         }
     }
 
