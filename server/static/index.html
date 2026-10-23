@@ -11,7 +11,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;800&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="/static/style.css?v=20261023_12">
+    <link rel="stylesheet" href="/static/style.css?v=20261023_13">
 </head>
 
 <body>
@@ -167,7 +167,7 @@
                     </div>
                 </div>
 
-                <!-- Arm Node (Robotic Collector Arm - Arduino Uno) -->
+                <!-- Arm Node (Robotic Collector Arm on CameraAndArmNode) -->
                 <div class="arm-panel glass-panel" id="arm-panel">
                     <div class="arm-panel-header">
                         <div class="arm-title-group">
@@ -183,13 +183,13 @@
                         <div class="node-status-info">
                             <span class="status-dot searching" id="arm-dot"></span>
                             <span class="node-label">Arm:</span>
-                            <span class="node-detail" id="arm-detail">Scanning USB...</span>
+                            <span class="node-detail" id="arm-detail">Scanning...</span>
                         </div>
-                        <span class="mac-badge" id="arm-mac-badge">PORT: Auto</span>
+                        <span class="mac-badge" id="arm-mac-badge">MAC: Auto</span>
                     </div>
-                    <button type="button" class="manual-toggle-btn" id="toggle-arm-manual">Manual Port Override ▾</button>
+                    <button type="button" class="manual-toggle-btn" id="toggle-arm-manual">Manual IP Override ▾</button>
                     <div class="controls manual-controls-container hidden" id="arm-manual-controls" style="margin-bottom: 0.75rem;">
-                        <input type="text" id="arm-port" placeholder="Port e.g. COM3 or IP" class="glass-input">
+                        <input type="text" id="arm-ip" placeholder="CameraAndArm IP (e.g. 192.168.137.x)" class="glass-input">
                         <button id="connect-arm" class="btn-primary">Connect</button>
                     </div>
                     <div class="arm-controls-body" id="arm-controls">
@@ -216,7 +216,7 @@
         </main>
     </div>
 
-    <script src="/static/script.js?v=20261023_12"></script>
+    <script src="/static/script.js?v=20261023_13"></script>
 </body>
 
 </html>

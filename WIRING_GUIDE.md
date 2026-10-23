@@ -6,10 +6,32 @@ This completely solves the ESP32-CAM's ADC2/Wi-Fi limitation. The ESP32-CAM will
 
 ---
 
-## 1. Camera Node (ESP32-CAM)
-The ESP32-CAM is dedicated entirely to streaming video.
-- **Code**: Upload `Guardian/CameraNode.ino` to this board.
-- **Wiring**: No sensors are connected to this board. Just provide it with stable 5V power.
+## 1. Camera & Arm Node (AI-Thinker ESP32-CAM + Servo Arm)
+The ESP32-CAM runs `Guardian/CameraAndArmNode/CameraAndArmNode.ino` (also mirrored in `Guardian/CameraNode/CameraNode.ino`), serving both the live camera snapshots (`/capture`) and the robotic debris-collector servo arm (`/arm?angle=0..180`) over Wi-Fi LAN.
+- **Code**: Upload `Guardian/CameraAndArmNode/CameraAndArmNode.ino` to the **AI-Thinker ESP32-CAM**.
+- **Auto-Discovery**: Broadcasts UDP beacons on port 5005 (`role: "camera_arm"`), automatically bringing both the **Camera** and **Collector Arm** panels online in the web dashboard.
+
+### ESP32-CAM Header Pinout (Back View — `ESP-32S` Shield Facing You, Antenna at Bottom)
+```text
+      LEFT HEADER                           RIGHT HEADER
+  ┌─────────────────┐                   ┌─────────────────┐
+  │ 1. 3V3          │                   │ 1. 5V   (Red)   │ <-- +5V Power Input
+  │ 2. IO16         │                   │ 2. GND  (Brown) │ <-- Common Ground
+  │ 3. IO0  (Flash) │                   │ 3. IO12 (Skip*) │
+  │ 4. GND          │    ┌─────────┐    │ 4. IO13 (SERVO) │ <-- Servo Signal (Orange/Yellow)
+  │ 5. VCC          │    │ ESP-32S │    │ 5. IO15         │
+  │ 6. U0R  (FTDI)  │    └─────────┘    │ 6. IO14 (Backup)│ <-- Backup Servo Signal
+  │ 7. U0T  (FTDI)  │     ┌───────┐     │ 7. IO2          │
+  │ 8. GND  (Spare) │     │ANTENNA│     │ 8. IO4  (Flash) │
+  └─────────────────┘     └───────┘     └─────────────────┘
+```
+*\*Note: Skip `IO12` (`GPIO 12`) because it is an ESP32 boot strapping pin — pulling it high at boot prevents the ESP32 from starting.*
+
+### Servo 3-Wire Connections to ESP32-CAM
+1. **Servo Signal (Orange / Yellow wire)** $\rightarrow$ **`IO13` (`GPIO 13`)** — the **4th pin down on the Right Header** (2 pins below your brown `GND` wire).
+   - *Note*: **`IO14` (`GPIO 14`)** (6th pin down on the Right Header) is also driven with the exact same 50 Hz servo signal in parallel, so either `IO13` or `IO14` works.
+2. **Servo VCC (Red wire)** $\rightarrow$ **External 5V Power Rail** (shared with the `5V` source powering top-right Pin 1 of the ESP32-CAM; avoid powering a loaded servo exclusively through a weak USB-TTL 3.3V regulator so the camera doesn't brown out when the arm moves).
+3. **Servo GND (Brown / Black wire)** $\rightarrow$ **Common GND** (connect to the spare **bottom-left `GND` pin (Pin 8 on Left Header)** on the ESP32-CAM, or directly to the shared power supply `GND`).
 
 ---
 
@@ -61,34 +83,22 @@ The Motor Node receives driving commands (forward, backward, left, right, stop) 
 
 ---
 
-## 4. Arm Node (Arduino Uno + Servo)
-The Arm Node controls the robotic collector arm used to pick up debris from the drain.
-- **Code**: Upload `Guardian/ArmNode/ArmNode.ino` to the Arduino Uno.
-- **Communication**: Connect Arduino Uno to the host computer running the server via standard USB cable. The server automatically detects the COM port and communicates via USB Serial (115200 baud).
-
-### Pinout & Connections
-- **Servo Signal Pin** (Orange / Yellow wire) -> **Digital Pin 9** (PWM) on Arduino Uno.
-- **Servo VCC** (Red wire) -> External 5V DC Power Source (Servos draw high peak currents under load).
-- **Servo GND** (Brown / Black wire) -> Power Supply GND **AND** Arduino Uno GND (**Common Ground is mandatory**).
-
----
-
 ## How to Upload the Code
 
-### For the ESP32 WROOM (Sensor Node):
+### For the ESP32 WROOM (Sensor Node / Motor Node):
 1. Plug it directly into your computer via USB.
 2. Select **DOIT ESP32 DEVKIT V1** (or similar) in the Arduino IDE.
-3. Upload `Guardian/SensorNode.ino`.
+3. Upload `Guardian/SensorNode/SensorNode.ino` or `Guardian/MotorNode/MotorNode.ino`.
 
-### For the ESP32-CAM (Camera Node):
+### For the ESP32-CAM (CameraAndArmNode):
 You need an **FTDI Programmer (USB to TTL converter)**.
 1. Connect the FTDI programmer to the ESP32-CAM:
-   - FTDI `5V` -> ESP32-CAM `5V`
-   - FTDI `GND` -> ESP32-CAM `GND`
-   - FTDI `TX` -> ESP32-CAM `U0R` (GPIO 3)
-   - FTDI `RX` -> ESP32-CAM `U0T` (GPIO 1)
-2. **Put ESP32-CAM in Flash Mode**: Connect **GPIO 0 to GND** on the ESP32-CAM.
+   - FTDI `5V` -> ESP32-CAM `5V` (Top-right Pin 1)
+   - FTDI `GND` -> ESP32-CAM `GND` (Top-right Pin 2)
+   - FTDI `TX` -> ESP32-CAM `U0R` (GPIO 3, Left Header Pin 6)
+   - FTDI `RX` -> ESP32-CAM `U0T` (GPIO 1, Left Header Pin 7)
+2. **Put ESP32-CAM in Flash Mode**: Connect **`IO0` (GPIO 0) to `GND`** on the Left Header (Pins 3 & 4).
 3. Plug the FTDI into your computer.
 4. Select **AI Thinker ESP32-CAM** in the Arduino IDE.
-5. Upload `Guardian/CameraNode.ino`.
-6. Once uploading is done, **disconnect GPIO 0 from GND** and press the RESET button on the ESP32-CAM to start the code.
+5. Upload `Guardian/CameraAndArmNode/CameraAndArmNode.ino`.
+6. Once uploading is done, **disconnect `IO0` from `GND`** and press the **RESET** button on the ESP32-CAM to start the code.

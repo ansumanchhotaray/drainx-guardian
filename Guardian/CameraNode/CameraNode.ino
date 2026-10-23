@@ -1,3 +1,19 @@
+/*
+ * DrainX Guardian — CameraAndArmNode (AI-Thinker ESP32-CAM)
+ *
+ * Combines live MJPEG/JPEG snapshot streaming (/capture) and the
+ * robotic debris-collector servo arm (/arm?angle=0..180) on a single
+ * ESP32-CAM board over Wi-Fi LAN.
+ *
+ * Auto-discovers into the dashboard via UDP beacon on port 5005.
+ *
+ * Servo Wiring (AI-Thinker ESP32-CAM):
+ *   - Servo Signal (Orange/Yellow) -> GPIO 13 (IO13, 4th pin down on right header)
+ *                                     [GPIO 14 / IO14 is also driven in parallel]
+ *   - Servo VCC    (Red)           -> 5V power rail (external 5V supply shared with 5V pin)
+ *   - Servo GND    (Brown/Black)   -> Common GND (e.g. bottom-left GND pin or power GND)
+ */
+
 #include <esp_camera.h>
 #include <WiFi.h>
 #include <WiFiUdp.h>
@@ -11,12 +27,53 @@ WiFiServer server(80);
 WiFiUDP udp;
 unsigned long lastBeaconTime = 0;
 
+// --- Servo Arm Settings (Uses LEDC Timer 2 so it never conflicts with Camera Timer 0) ---
+#define SERVO_PIN          13   // Primary servo signal pin (IO13)
+#define SERVO_PIN_ALT      14   // Backup servo signal pin (IO14, driven in parallel)
+#define SERVO_LEDC_CH       4   // LEDC Channel 4 (Timer 2)
+#define SERVO_LEDC_CH_ALT   5   // LEDC Channel 5 (Timer 2)
+#define SERVO_FREQ         50   // Standard 50 Hz servo PWM (20 ms period)
+#define SERVO_RES          14   // 14-bit resolution (0 - 16383 ticks)
+
+int currentAngle = 90;          // Default startup angle (90 deg midpoint)
+
+void writeServoAngle(int angle) {
+  angle = constrain(angle, 0, 180);
+  currentAngle = angle;
+
+  // Map 0-180 degrees to 500-2400 us pulse width out of 20000 us (50 Hz)
+  long pulseUs = map(angle, 0, 180, 500, 2400);
+  uint32_t duty = (uint32_t)((pulseUs * 16384L) / 20000L);
+
+#if defined(ESP_ARDUINO_VERSION_MAJOR) && ESP_ARDUINO_VERSION_MAJOR >= 3
+  ledcWrite(SERVO_PIN,     duty);
+  ledcWrite(SERVO_PIN_ALT, duty);
+#else
+  ledcWrite(SERVO_LEDC_CH,     duty);
+  ledcWrite(SERVO_LEDC_CH_ALT, duty);
+#endif
+}
+
+void initServo() {
+#if defined(ESP_ARDUINO_VERSION_MAJOR) && ESP_ARDUINO_VERSION_MAJOR >= 3
+  ledcAttachChannel(SERVO_PIN,     SERVO_FREQ, SERVO_RES, SERVO_LEDC_CH);
+  ledcAttachChannel(SERVO_PIN_ALT, SERVO_FREQ, SERVO_RES, SERVO_LEDC_CH_ALT);
+#else
+  ledcSetup(SERVO_LEDC_CH,     SERVO_FREQ, SERVO_RES);
+  ledcAttachPin(SERVO_PIN,     SERVO_LEDC_CH);
+  ledcSetup(SERVO_LEDC_CH_ALT, SERVO_FREQ, SERVO_RES);
+  ledcAttachPin(SERVO_PIN_ALT, SERVO_LEDC_CH_ALT);
+#endif
+  writeServoAngle(currentAngle);
+  Serial.printf("Servo Arm Ready on GPIO %d (and GPIO %d) at %d deg\n", SERVO_PIN, SERVO_PIN_ALT, currentAngle);
+}
+
 void broadcastBeacon() {
   if (WiFi.status() != WL_CONNECTED) return;
   IPAddress broadcastIp(255, 255, 255, 255);
   String macStr = WiFi.macAddress();
   String ipStr = WiFi.localIP().toString();
-  String message = "{\"device\":\"drainx-guardian\",\"role\":\"camera\",\"mac\":\"" + macStr + "\",\"ip\":\"" + ipStr + "\",\"port\":80}";
+  String message = "{\"device\":\"drainx-guardian\",\"role\":\"camera_arm\",\"mac\":\"" + macStr + "\",\"ip\":\"" + ipStr + "\",\"port\":80,\"angle\":" + String(currentAngle) + "}";
   udp.beginPacket(broadcastIp, DISCOVERY_PORT);
   udp.print(message);
   udp.endPacket();
@@ -129,10 +186,32 @@ void handleClient() {
     client.write(fb->buf, fb->len);
 
     esp_camera_fb_return(fb);
-    Serial.println("Snapshot served");
+  } else if (request.indexOf("GET /arm") >= 0) {
+    // --- Set or Query Servo Arm Angle: GET /arm?angle=0..180 ---
+    int angleIdx = request.indexOf("angle=");
+    if (angleIdx >= 0) {
+      int valStart = angleIdx + 6;
+      int valEnd = valStart;
+      while (valEnd < (int)request.length() && isDigit(request.charAt(valEnd))) {
+        valEnd++;
+      }
+      if (valEnd > valStart) {
+        int newAngle = request.substring(valStart, valEnd).toInt();
+        writeServoAngle(newAngle);
+        Serial.printf("[ARM] Angle -> %d deg\n", currentAngle);
+      }
+    }
+    String body = "{\"status\":\"ok\",\"role\":\"arm\",\"angle\":" + String(currentAngle) + "}";
+    client.println("HTTP/1.1 200 OK");
+    client.println("Content-Type: application/json");
+    client.println("Access-Control-Allow-Origin: *");
+    client.printf("Content-Length: %u\r\n", body.length());
+    client.println("Connection: close");
+    client.println();
+    client.print(body);
   } else if (request.indexOf("GET /api/info") >= 0 || request.indexOf("GET /info") >= 0) {
     // --- Device Info Endpoint ---
-    String body = "{\"device\":\"drainx-guardian\",\"role\":\"camera\",\"mac\":\"" + WiFi.macAddress() + "\",\"ip\":\"" + WiFi.localIP().toString() + "\",\"port\":80}";
+    String body = "{\"device\":\"drainx-guardian\",\"role\":\"camera_arm\",\"mac\":\"" + WiFi.macAddress() + "\",\"ip\":\"" + WiFi.localIP().toString() + "\",\"port\":80,\"angle\":" + String(currentAngle) + "}";
     client.println("HTTP/1.1 200 OK");
     client.println("Content-Type: application/json");
     client.println("Access-Control-Allow-Origin: *");
@@ -142,7 +221,7 @@ void handleClient() {
     client.print(body);
   } else {
     // --- Simple status page for any other request ---
-    String body = "{\"status\":\"ok\",\"role\":\"camera\",\"mac\":\"" + WiFi.macAddress() + "\",\"endpoints\":[\"/capture\",\"/api/info\"]}";
+    String body = "{\"status\":\"ok\",\"role\":\"camera_arm\",\"angle\":" + String(currentAngle) + ",\"mac\":\"" + WiFi.macAddress() + "\",\"endpoints\":[\"/capture\",\"/arm?angle=90\",\"/api/info\"]}";
     client.println("HTTP/1.1 200 OK");
     client.println("Content-Type: application/json");
     client.println("Access-Control-Allow-Origin: *");
@@ -167,6 +246,7 @@ void setup() {
   delay(1000);
 
   startCamera();
+  initServo();
 
   // Connect to Laptop Wi-Fi Hotspot
   WiFi.begin(ssid, password);
@@ -182,6 +262,9 @@ void setup() {
   Serial.print("Camera Snapshot URL: http://");
   Serial.print(WiFi.localIP());
   Serial.println("/capture");
+  Serial.print("Arm Control URL:     http://");
+  Serial.print(WiFi.localIP());
+  Serial.println("/arm?angle=90");
 
   // Start HTTP Server on Port 80
   server.begin();

@@ -186,13 +186,13 @@ document.addEventListener('DOMContentLoaded', () => {
             if (motorBadge) motorBadge.textContent = 'Searching...';
         }
 
-        // --- Arm Node (Arduino Uno) ---
+        // --- Arm Node (CameraAndArmNode over LAN) ---
         if (nodes.arm) {
             const arm = nodes.arm;
             if (arm.status === 'online') {
                 if (armDot) armDot.className = 'status-dot online';
-                if (armDetail) armDetail.textContent = `Connected (${arm.port || arm.ip || 'Arduino'})`;
-                if (armMacBadge) armMacBadge.textContent = arm.mac || `PORT: ${arm.port || 'USB'}`;
+                if (armDetail) armDetail.textContent = `Connected (${arm.ip})`;
+                if (armMacBadge) armMacBadge.textContent = `MAC: ${arm.mac}`;
                 if (armBadge) armBadge.textContent = 'Online';
                 if (armControls) {
                     armControls.style.opacity = '1';
@@ -200,8 +200,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
             } else {
                 if (armDot) armDot.className = 'status-dot offline';
-                if (armDetail) armDetail.textContent = `Offline (${arm.port || arm.ip || 'Arduino'})`;
-                if (armMacBadge) armMacBadge.textContent = arm.mac || 'PORT: Auto';
+                if (armDetail) armDetail.textContent = `Offline (${arm.ip || 'Arm Node'})`;
+                if (armMacBadge) armMacBadge.textContent = `MAC: ${arm.mac || 'Auto'}`;
                 if (armBadge) armBadge.textContent = 'Offline';
                 if (armControls) {
                     armControls.style.opacity = '0.4';
@@ -214,8 +214,8 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         } else {
             if (armDot) armDot.className = 'status-dot searching';
-            if (armDetail) armDetail.textContent = 'Scanning USB...';
-            if (armMacBadge) armMacBadge.textContent = 'PORT: Auto';
+            if (armDetail) armDetail.textContent = 'Scanning...';
+            if (armMacBadge) armMacBadge.textContent = 'MAC: Auto';
             if (armBadge) armBadge.textContent = 'Searching...';
         }
 
@@ -596,17 +596,17 @@ document.addEventListener('DOMContentLoaded', () => {
     if (toggleArmBtn && armManualControls) {
         toggleArmBtn.addEventListener('click', () => {
             const isHidden = armManualControls.classList.toggle('hidden');
-            toggleArmBtn.textContent = isHidden ? 'Manual Port Override ▾' : 'Hide Manual Override ▴';
+            toggleArmBtn.textContent = isHidden ? 'Manual IP Override ▾' : 'Hide Manual Override ▴';
         });
     }
 
     const connectArmBtn = document.getElementById('connect-arm');
-    const armPortInput = document.getElementById('arm-port');
-    if (connectArmBtn && armPortInput) {
+    const armIpInput = document.getElementById('arm-ip');
+    if (connectArmBtn && armIpInput) {
         connectArmBtn.addEventListener('click', async () => {
-            const port = armPortInput.value.trim();
-            if (!port) {
-                alert("Please enter a COM port (e.g. COM3) or IP.");
+            const ip = armIpInput.value.trim();
+            if (!ip) {
+                alert("Please enter the CameraAndArmNode IP address.");
                 return;
             }
 
@@ -617,7 +617,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 const resp = await fetch('/api/set_arm_node', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ port: port })
+                    body: JSON.stringify({ ip: ip })
                 });
                 const data = await resp.json();
 

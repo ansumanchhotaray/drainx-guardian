@@ -5,12 +5,11 @@ An autonomous drainage monitoring system that uses a two-board ESP32 architectur
 ## Architecture Overview
 
 This project uses a modular multi-node architecture to ensure maximum stability and bypass hardware limitations on individual ESP32 boards:
-1. **Camera Node (ESP32-CAM)**: Dedicated entirely to streaming video snapshots (`/capture`).
+1. **Camera & Arm Node (`CameraAndArmNode`, AI-Thinker ESP32-CAM)**: Streams live video snapshots (`/capture`) and drives the robotic debris-collection servo arm on `GPIO 13` / `GPIO 14` (`/arm?angle=0..180`) over Wi-Fi LAN.
 2. **Sensor Node (ESP32 WROOM)**: Dedicated to reading analog sensors (Turbidity, pH, Temperature) and serving data (`/sensors`).
 3. **Motor Node (ESP32 WROOM)**: Dedicated to robot propulsion via L298N dual H-bridge motor driver (`/move`, `/speed`, `/status`).
-4. **Arm Node (Arduino Uno)**: Dedicated to robotic debris collection arm servo on Pin 9 via USB Serial (`/api/arm`).
-5. **Backend Server (Python/FastAPI)**: Auto-discovers all nodes via UDP beacons on port 5005 & USB Serial auto-detection, proxies AI vision, streams telemetry via WebSockets (`/ws`), and dispatches motor and arm commands.
-6. **Frontend Dashboard**: A modern, glassmorphic UI displaying the live camera feed, real-time sensor telemetry, directional drive controls, and robotic arm angle slider.
+4. **Backend Server (Python/FastAPI)**: Auto-discovers all nodes via UDP beacons on port 5005, proxies AI vision, streams telemetry via WebSockets (`/ws`), and dispatches motor and arm commands over LAN.
+5. **Frontend Dashboard**: A modern UI displaying the live camera feed, real-time sensor telemetry, directional drive controls, and robotic arm angle slider.
 
 ## 1. Hardware Setup (ESP32)
 

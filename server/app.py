@@ -4,7 +4,6 @@ from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from typing import List, Dict, Optional
 import vision
-import arm_serial
 import asyncio
 import socket
 import threading
@@ -38,34 +37,7 @@ discovered_nodes: Dict[str, Optional[dict]] = {
 # Actuator node URLs -- set on discovery or manual override
 _motor_url: Optional[str] = None
 _arm_url: Optional[str] = None
-_event_loop: Optional[asyncio.AbstractEventLoop] = None
-
-def on_arm_serial_status(port: str, angle: int, status: str):
-    """Callback triggered by ArmSerialManager when Arduino Uno reports status or disconnects."""
-    global _event_loop
-    discovered_nodes["arm"] = {
-        "role": "arm",
-        "ip": "USB",
-        "mac": f"PORT:{port}" if port else "PORT:Auto",
-        "port": port,
-        "last_seen": time.time(),
-        "status": status,
-        "angle": angle,
-        "connection": "serial"
-    }
-    if _event_loop and _event_loop.is_running():
-        asyncio.run_coroutine_threadsafe(
-            manager.broadcast({
-                "type": "node_update",
-                "role": "arm",
-                "node": discovered_nodes["arm"],
-                "nodes": discovered_nodes,
-                "angle": angle
-            }),
-            _event_loop
-        )
-
-arm_manager = arm_serial.ArmSerialManager(on_status_callback=on_arm_serial_status)
+_arm_angle: int = 90
 
 class ConnectionManager:
     def __init__(self):
@@ -128,14 +100,65 @@ async def get_nodes():
     return {**discovered_nodes, "vision": vision.get_detection_state()}
 
 async def handle_discovered_node(msg: dict, sender_ip: str):
-    global _sensor_url, _motor_url, _arm_url
+    global _sensor_url, _motor_url, _arm_url, _arm_angle
     role = msg.get("role")
-    if role not in ("camera", "sensor", "motor", "arm"):
+    if role not in ("camera", "camera_arm", "sensor", "motor", "arm"):
         return
 
     mac = str(msg.get("mac", "UNKNOWN")).upper()
     port = int(msg.get("port", 80))
     node_ip = msg.get("ip") or sender_ip
+
+    # CameraAndArmNode combines both camera (/capture) and arm (/arm) on the same ESP32-CAM
+    if role in ("camera", "camera_arm"):
+        prev_cam = discovered_nodes.get("camera")
+        prev_arm = discovered_nodes.get("arm")
+        is_new = (
+            prev_cam is None or
+            prev_cam.get("ip") != node_ip or
+            prev_cam.get("status") != "online" or
+            prev_cam.get("mac") != mac or
+            prev_arm is None or
+            prev_arm.get("status") != "online"
+        )
+
+        cam_url = f"http://{node_ip}:{port}/capture"
+        arm_url = f"http://{node_ip}:{port}/arm"
+        if "angle" in msg:
+            _arm_angle = int(msg["angle"])
+
+        now = time.time()
+        discovered_nodes["camera"] = {
+            "role": "camera",
+            "ip": node_ip,
+            "mac": mac,
+            "port": port,
+            "last_seen": now,
+            "status": "online",
+            "url": cam_url
+        }
+        discovered_nodes["arm"] = {
+            "role": "arm",
+            "ip": node_ip,
+            "mac": mac,
+            "port": port,
+            "last_seen": now,
+            "status": "online",
+            "angle": _arm_angle,
+            "url": arm_url
+        }
+        _arm_url = arm_url
+
+        if is_new:
+            print(f"[Discovery] Detected CAMERA+ARM Node: IP={node_ip}, MAC={mac}")
+            vision.set_camera_url(cam_url)
+            await manager.broadcast({
+                "type": "node_update",
+                "role": "camera_arm",
+                "node": discovered_nodes["camera"],
+                "nodes": discovered_nodes
+            })
+        return
 
     prev_node = discovered_nodes.get(role)
     is_new = (
@@ -145,13 +168,11 @@ async def handle_discovered_node(msg: dict, sender_ip: str):
         prev_node.get("mac") != mac
     )
 
-    if role == "camera":
-        url = f"http://{node_ip}:{port}/capture"
-    elif role == "sensor":
+    if role == "sensor":
         url = f"http://{node_ip}:{port}/sensors"
     elif role == "motor":
         url = f"http://{node_ip}:{port}/move"
-    else:  # arm (network fallback)
+    else:  # standalone arm
         url = f"http://{node_ip}:{port}/arm"
 
     node_data = {
@@ -164,16 +185,15 @@ async def handle_discovered_node(msg: dict, sender_ip: str):
         "url": url
     }
     if role == "arm":
-        node_data["angle"] = int(msg.get("angle", 90))
-        node_data["connection"] = "network"
+        if "angle" in msg:
+            _arm_angle = int(msg["angle"])
+        node_data["angle"] = _arm_angle
 
     discovered_nodes[role] = node_data
 
     if is_new:
         print(f"[Discovery] Detected {role.upper()} Node: IP={node_ip}, MAC={mac}")
-        if role == "camera":
-            vision.set_camera_url(url)
-        elif role == "sensor":
+        if role == "sensor":
             _sensor_url = url
             print(f"[Discovery] Sensor polling URL updated to: {_sensor_url}")
         elif role == "motor":
@@ -218,18 +238,14 @@ def udp_discovery_worker(loop: asyncio.AbstractEventLoop):
             time.sleep(0.05)
 
 async def monitor_node_liveness():
-    """Periodically marks nodes offline if no beacons/heartbeats are received."""
+    """Periodically marks nodes offline if no beacons are received within 18 seconds."""
     while True:
         await asyncio.sleep(4)
         now = time.time()
         changed = False
         for role, node in list(discovered_nodes.items()):
             if node and node.get("status") == "online":
-                if role == "arm" and node.get("connection") == "serial":
-                    if not arm_manager.is_online or (now - node.get("last_seen", 0) > 10):
-                        node["status"] = "offline"
-                        changed = True
-                elif now - node.get("last_seen", 0) > 18:
+                if now - node.get("last_seen", 0) > 18:
                     node["status"] = "offline"
                     changed = True
                     print(f"[Discovery] {role.upper()} node (MAC: {node.get('mac')}) timed out (offline)")
@@ -255,14 +271,17 @@ async def set_camera(request: Request):
     Called by the frontend for manual ESP32-CAM IP override.
     Body: { "url": "http://192.168.x.x/capture" }
     """
+    global _arm_url
     body = await request.json()
     url = body.get("url", "").strip()
     if not url:
         return {"status": "error", "message": "url is required"}
     vision.set_camera_url(url)
+    base_url = url.rsplit("/", 1)[0]
+    _arm_url = f"{base_url}/arm"
     return {"status": "ok", "url": url}
 
-# --- Processed MJPEG video feed (annotated with garbage detection boxes) ---
+# --- Processed MJPEG video feed ---
 async def _frame_generator():
     """Async generator that yields MJPEG boundary-delimited frames."""
     boundary = b"--frame\r\n"
@@ -320,13 +339,10 @@ async def monitor_vision_status():
 
 @app.on_event("startup")
 async def startup_event():
-    global _sensor_task, _event_loop
+    global _sensor_task
     loop = asyncio.get_running_loop()
-    _event_loop = loop
     # Pre-warm AI model in background
     vision.start_model_loading()
-    # Start Arm USB Serial auto-detect manager
-    arm_manager.start()
     # Start UDP discovery beacon listener
     t = threading.Thread(target=udp_discovery_worker, args=(loop,), daemon=True)
     t.start()
@@ -445,130 +461,114 @@ async def set_motor_node(request: Request):
     print(f"[Server] Motor URL manually set to: {_motor_url}")
     return {"status": "ok", "url": _motor_url}
 
-# --- Arm Node Control (Robotic Collector Arm - Arduino Uno) ---
+# --- Arm Node Control (Robotic Collector Arm on CameraAndArmNode) ---
+_arm_lock = asyncio.Lock()
+_pending_arm_angle: Optional[int] = None
+
 @app.post("/api/arm")
 async def arm_command(request: Request):
     """
-    Control the robotic arm servo angle (0 - 180 degrees).
+    Send a servo angle command (0 - 180 degrees) to CameraAndArmNode over LAN.
     Body: { "angle": 90 }
     """
-    global _arm_url
+    global _arm_url, _arm_angle, _pending_arm_angle
+    import httpx
     body = await request.json()
     angle = int(body.get("angle", 90))
     angle = max(0, min(180, angle))
+    _arm_angle = angle
 
-    dispatched = False
-    # 1. Try USB Serial connection to Arduino Uno
-    if arm_manager.is_online or (arm_manager.conn and arm_manager.conn.is_open):
-        dispatched = arm_manager.set_angle(angle)
+    if not _arm_url:
+        arm_node = discovered_nodes.get("arm")
+        if arm_node and arm_node.get("url"):
+            _arm_url = arm_node["url"]
+        elif discovered_nodes.get("camera") and discovered_nodes["camera"].get("ip"):
+            cam = discovered_nodes["camera"]
+            _arm_url = f"http://{cam['ip']}:{cam.get('port', 80)}/arm"
+        else:
+            return {"status": "error", "message": "Arm node not discovered yet"}
 
-    # 2. Try HTTP network fallback if available
-    if not dispatched and _arm_url:
-        import httpx
-        try:
-            async with httpx.AsyncClient() as client:
-                resp = await client.post(_arm_url, json={"angle": angle}, timeout=2.0)
-                dispatched = (resp.status_code == 200)
-        except Exception as e:
-            print(f"[Arm HTTP Error] {e}")
-
-    # Update state
     if discovered_nodes.get("arm"):
         discovered_nodes["arm"]["angle"] = angle
-        discovered_nodes["arm"]["last_seen"] = time.time()
-    else:
-        discovered_nodes["arm"] = {
-            "role": "arm",
-            "ip": "USB" if arm_manager.port else "Manual",
-            "mac": f"PORT:{arm_manager.port or 'Auto'}",
-            "port": arm_manager.port or 80,
-            "last_seen": time.time(),
-            "status": "online" if dispatched else "offline",
-            "angle": angle,
-            "connection": "serial" if arm_manager.port else "network"
-        }
 
-    # Broadcast arm angle update over WebSocket
+    # Broadcast arm angle update over WebSocket immediately for responsive UI
     await manager.broadcast({
         "type": "arm_update",
         "angle": angle,
         "nodes": discovered_nodes
     })
 
-    return {"status": "ok", "angle": angle, "dispatched": dispatched}
+    # Coalesce rapid slider movements so only the latest angle is sent next
+    _pending_arm_angle = angle
+    if _arm_lock.locked():
+        return {"status": "queued", "angle": angle}
+
+    async with _arm_lock:
+        last_resp_text = ""
+        while _pending_arm_angle is not None:
+            target_angle = _pending_arm_angle
+            _pending_arm_angle = None
+            try:
+                async with httpx.AsyncClient() as client:
+                    resp = await client.get(
+                        _arm_url,
+                        params={"angle": target_angle},
+                        headers={"Connection": "close"},
+                        timeout=1.5
+                    )
+                    last_resp_text = resp.text
+            except Exception as e:
+                return {"status": "error", "message": str(e)}
+        return {"status": "ok", "angle": angle, "arm_response": last_resp_text}
 
 @app.get("/api/arm")
 async def get_arm_state():
-    """Return current angle, connection status, and port of the Arm Node."""
+    """Return current angle and LAN node status of the Arm Node."""
+    arm_node = discovered_nodes.get("arm")
     return {
         "status": "ok",
-        "angle": arm_manager.current_angle,
-        "connected": arm_manager.is_online,
-        "port": arm_manager.port,
-        "node": discovered_nodes.get("arm")
-    }
-
-@app.get("/api/arm/ports")
-async def get_arm_ports():
-    """List available serial COM ports for the Arduino Uno Arm Node."""
-    return {
-        "status": "ok",
-        "ports": arm_manager.list_ports()
+        "angle": _arm_angle,
+        "connected": bool(arm_node and arm_node.get("status") == "online"),
+        "node": arm_node
     }
 
 @app.post("/api/set_arm_node")
 async def set_arm_node(request: Request):
     """
-    Manual port or IP override for Arm Node.
-    Body: { "port": "COM4" } or { "url": "http://192.168.137.x/arm" }
+    Manual IP override for Arm Node (CameraAndArmNode).
+    Body: { "ip": "192.168.137.x" }
     """
     global _arm_url
     body = await request.json()
-    port = body.get("port", "").strip()
-    url = body.get("url", "").strip()
+    ip = (body.get("ip") or body.get("port") or "").strip()
+    if not ip:
+        return {"status": "error", "message": "ip is required"}
 
-    if port:
-        ok = arm_manager.connect(port, manual=True)
-        if ok:
-            discovered_nodes["arm"] = {
-                "role": "arm",
-                "ip": "USB",
-                "mac": f"PORT:{port}",
-                "port": port,
-                "last_seen": time.time(),
-                "status": "online",
-                "angle": arm_manager.current_angle,
-                "connection": "serial"
-            }
-            await manager.broadcast({
-                "type": "node_update",
-                "role": "arm",
-                "node": discovered_nodes["arm"],
-                "nodes": discovered_nodes
-            })
-        return {"status": "ok" if ok else "error", "port": port, "connected": ok}
-    elif url:
-        _arm_url = url
-        discovered_nodes["arm"] = {
-            "role": "arm",
-            "ip": url,
-            "mac": "MANUAL",
-            "port": 80,
-            "last_seen": time.time(),
-            "status": "online",
-            "angle": 90,
-            "url": url,
-            "connection": "network"
-        }
-        await manager.broadcast({
-            "type": "node_update",
-            "role": "arm",
-            "node": discovered_nodes["arm"],
-            "nodes": discovered_nodes
-        })
-        return {"status": "ok", "url": url}
+    if ip.startswith("http://") or ip.startswith("https://"):
+        _arm_url = ip if ip.endswith("/arm") else f"{ip.rstrip('/')}/arm"
+        clean_ip = ip.split("//", 1)[1].split("/")[0].split(":")[0]
     else:
-        return {"status": "error", "message": "port or url is required"}
+        clean_ip = ip
+        _arm_url = f"http://{clean_ip}/arm"
+
+    discovered_nodes["arm"] = {
+        "role": "arm",
+        "ip": clean_ip,
+        "mac": "MANUAL",
+        "port": 80,
+        "last_seen": time.time(),
+        "status": "online",
+        "angle": _arm_angle,
+        "url": _arm_url
+    }
+    print(f"[Server] Arm URL manually set to: {_arm_url}")
+    await manager.broadcast({
+        "type": "node_update",
+        "role": "arm",
+        "node": discovered_nodes["arm"],
+        "nodes": discovered_nodes
+    })
+    return {"status": "ok", "url": _arm_url}
 
 # --- WebSocket endpoint (used by the browser dashboard) ---
 @app.websocket("/ws")
