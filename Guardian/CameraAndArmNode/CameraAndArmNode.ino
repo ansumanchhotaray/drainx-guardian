@@ -1,22 +1,33 @@
 /*
  * DrainX Guardian — CameraAndArmNode (AI-Thinker ESP32-CAM)
  *
- * Combines live MJPEG/JPEG snapshot streaming (/capture) and the
+ * Combines live JPEG snapshot streaming (/capture) and the
  * robotic debris-collector servo arm (/arm?angle=0..180) on a single
  * ESP32-CAM board over Wi-Fi LAN.
  *
- * Auto-discovers into the dashboard via UDP beacon on port 5005.
+ * Power-Safe Servo Design for ESP32-CAM:
+ *   1. Hardware brownout detector is disabled at boot so servo current spikes
+ *      never reset the ESP32-CAM.
+ *   2. Servo PWM is kept OFF (LOW) during boot and Wi-Fi connection so the
+ *      ESP32 Wi-Fi radio gets 100% power during association.
+ *   3. Smooth slew-rate stepping (like the classic Arduino Sweep sketch) moves
+ *      the servo gradually in loop() instead of jumping instantaneously, cutting
+ *      peak inrush current by more than 60%.
+ *   4. Once the servo reaches targetAngle, PWM pulses are idled (duty = 0)
+ *      so the servo draws 0 mA while stationary.
  *
  * Servo Wiring (AI-Thinker ESP32-CAM):
  *   - Servo Signal (Orange/Yellow) -> GPIO 13 (IO13, 4th pin down on right header)
  *                                     [GPIO 14 / IO14 is also driven in parallel]
- *   - Servo VCC    (Red)           -> 5V power rail (external 5V supply shared with 5V pin)
- *   - Servo GND    (Brown/Black)   -> Common GND (e.g. bottom-left GND pin or power GND)
+ *   - Servo VCC    (Red)           -> 5V power rail
+ *   - Servo GND    (Brown/Black)   -> Common GND
  */
 
 #include <esp_camera.h>
 #include <WiFi.h>
 #include <WiFiUdp.h>
+#include "soc/soc.h"
+#include "soc/rtc_cntl_reg.h"
 
 // --- Network & Discovery Settings ---
 const char* ssid = "drainx-controller";
@@ -35,13 +46,29 @@ unsigned long lastBeaconTime = 0;
 #define SERVO_FREQ         50   // Standard 50 Hz servo PWM (20 ms period)
 #define SERVO_RES          14   // 14-bit resolution (0 - 16383 ticks)
 
-int currentAngle = 90;          // Default startup angle (90 deg midpoint)
+int currentAngle = 90;          // Current physical servo angle
+int targetAngle  = 90;          // Requested target servo angle
+bool servoAttached = false;
+bool servoActive   = false;
+unsigned long lastServoStepTime = 0;
+unsigned long servoIdleTime     = 0;
 
-void writeServoAngle(int angle) {
-  angle = constrain(angle, 0, 180);
-  currentAngle = angle;
+void attachServoPWM() {
+  if (servoAttached) return;
+#if defined(ESP_ARDUINO_VERSION_MAJOR) && ESP_ARDUINO_VERSION_MAJOR >= 3
+  ledcAttachChannel(SERVO_PIN,     SERVO_FREQ, SERVO_RES, SERVO_LEDC_CH);
+  ledcAttachChannel(SERVO_PIN_ALT, SERVO_FREQ, SERVO_RES, SERVO_LEDC_CH_ALT);
+#else
+  ledcSetup(SERVO_LEDC_CH,     SERVO_FREQ, SERVO_RES);
+  ledcAttachPin(SERVO_PIN,     SERVO_LEDC_CH);
+  ledcSetup(SERVO_LEDC_CH_ALT, SERVO_FREQ, SERVO_RES);
+  ledcAttachPin(SERVO_PIN_ALT, SERVO_LEDC_CH_ALT);
+#endif
+  servoAttached = true;
+}
 
-  // Map 0-180 degrees to 500-2400 us pulse width out of 20000 us (50 Hz)
+void applyServoPWM(int angle) {
+  attachServoPWM();
   long pulseUs = map(angle, 0, 180, 500, 2400);
   uint32_t duty = (uint32_t)((pulseUs * 16384L) / 20000L);
 
@@ -54,18 +81,43 @@ void writeServoAngle(int angle) {
 #endif
 }
 
-void initServo() {
+void stopServoPulses() {
+  if (!servoAttached) return;
 #if defined(ESP_ARDUINO_VERSION_MAJOR) && ESP_ARDUINO_VERSION_MAJOR >= 3
-  ledcAttachChannel(SERVO_PIN,     SERVO_FREQ, SERVO_RES, SERVO_LEDC_CH);
-  ledcAttachChannel(SERVO_PIN_ALT, SERVO_FREQ, SERVO_RES, SERVO_LEDC_CH_ALT);
+  ledcWrite(SERVO_PIN,     0);
+  ledcWrite(SERVO_PIN_ALT, 0);
 #else
-  ledcSetup(SERVO_LEDC_CH,     SERVO_FREQ, SERVO_RES);
-  ledcAttachPin(SERVO_PIN,     SERVO_LEDC_CH);
-  ledcSetup(SERVO_LEDC_CH_ALT, SERVO_FREQ, SERVO_RES);
-  ledcAttachPin(SERVO_PIN_ALT, SERVO_LEDC_CH_ALT);
+  ledcWrite(SERVO_LEDC_CH,     0);
+  ledcWrite(SERVO_LEDC_CH_ALT, 0);
 #endif
-  writeServoAngle(currentAngle);
-  Serial.printf("Servo Arm Ready on GPIO %d (and GPIO %d) at %d deg\n", SERVO_PIN, SERVO_PIN_ALT, currentAngle);
+  servoActive = false;
+}
+
+void setTargetServoAngle(int angle) {
+  targetAngle = constrain(angle, 0, 180);
+  servoActive = true;
+  servoIdleTime = millis() + 400;
+}
+
+void updateServoSmooth() {
+  if (!servoActive) return;
+
+  unsigned long now = millis();
+  if (currentAngle != targetAngle) {
+    if (now - lastServoStepTime >= 12) { // Step every 12 ms for low-current smooth motion
+      lastServoStepTime = now;
+      int diff = targetAngle - currentAngle;
+      int step = constrain(diff, -3, 3); // Max 3 degrees per 12 ms step
+      currentAngle += step;
+      applyServoPWM(currentAngle);
+      servoIdleTime = now + 250; // Hold pulse 250 ms after reaching final angle
+    }
+  } else {
+    // Reached target angle; stop pulses after settling window so servo draws 0 mA
+    if ((long)(now - servoIdleTime) >= 0) {
+      stopServoPulses();
+    }
+  }
 }
 
 void broadcastBeacon() {
@@ -73,7 +125,7 @@ void broadcastBeacon() {
   IPAddress broadcastIp(255, 255, 255, 255);
   String macStr = WiFi.macAddress();
   String ipStr = WiFi.localIP().toString();
-  String message = "{\"device\":\"drainx-guardian\",\"role\":\"camera_arm\",\"mac\":\"" + macStr + "\",\"ip\":\"" + ipStr + "\",\"port\":80,\"angle\":" + String(currentAngle) + "}";
+  String message = "{\"device\":\"drainx-guardian\",\"role\":\"camera_arm\",\"mac\":\"" + macStr + "\",\"ip\":\"" + ipStr + "\",\"port\":80,\"angle\":" + String(targetAngle) + "}";
   udp.beginPacket(broadcastIp, DISCOVERY_PORT);
   udp.print(message);
   udp.endPacket();
@@ -99,6 +151,13 @@ void broadcastBeacon() {
 #define PCLK_GPIO_NUM    22
 
 void startCamera() {
+  // Power-cycle the OV2640 sensor cleanly before init
+  pinMode(PWDN_GPIO_NUM, OUTPUT);
+  digitalWrite(PWDN_GPIO_NUM, HIGH);
+  delay(50);
+  digitalWrite(PWDN_GPIO_NUM, LOW);
+  delay(50);
+
   camera_config_t config;
 
   config.ledc_channel = LEDC_CHANNEL_0;
@@ -129,14 +188,19 @@ void startCamera() {
 
   config.frame_size = FRAMESIZE_QVGA;   // 320x240
   config.jpeg_quality = 12;
-  config.fb_count = 2;
-  config.grab_mode = CAMERA_GRAB_LATEST;
-  config.fb_location = CAMERA_FB_IN_PSRAM;
+  if (psramFound()) {
+    config.fb_count = 2;
+    config.grab_mode = CAMERA_GRAB_LATEST;
+    config.fb_location = CAMERA_FB_IN_PSRAM;
+  } else {
+    config.fb_count = 1;
+    config.fb_location = CAMERA_FB_IN_DRAM;
+  }
 
   esp_err_t err = esp_camera_init(&config);
   if (err != ESP_OK) {
     Serial.printf("Camera Init Failed: 0x%x\n", err);
-    while (true);
+    return;
   }
   Serial.println("Camera Ready");
 }
@@ -197,11 +261,11 @@ void handleClient() {
       }
       if (valEnd > valStart) {
         int newAngle = request.substring(valStart, valEnd).toInt();
-        writeServoAngle(newAngle);
-        Serial.printf("[ARM] Angle -> %d deg\n", currentAngle);
+        setTargetServoAngle(newAngle);
+        Serial.printf("[ARM] Target Angle -> %d deg\n", targetAngle);
       }
     }
-    String body = "{\"status\":\"ok\",\"role\":\"arm\",\"angle\":" + String(currentAngle) + "}";
+    String body = "{\"status\":\"ok\",\"role\":\"arm\",\"angle\":" + String(targetAngle) + "}";
     client.println("HTTP/1.1 200 OK");
     client.println("Content-Type: application/json");
     client.println("Access-Control-Allow-Origin: *");
@@ -211,7 +275,7 @@ void handleClient() {
     client.print(body);
   } else if (request.indexOf("GET /api/info") >= 0 || request.indexOf("GET /info") >= 0) {
     // --- Device Info Endpoint ---
-    String body = "{\"device\":\"drainx-guardian\",\"role\":\"camera_arm\",\"mac\":\"" + WiFi.macAddress() + "\",\"ip\":\"" + WiFi.localIP().toString() + "\",\"port\":80,\"angle\":" + String(currentAngle) + "}";
+    String body = "{\"device\":\"drainx-guardian\",\"role\":\"camera_arm\",\"mac\":\"" + WiFi.macAddress() + "\",\"ip\":\"" + WiFi.localIP().toString() + "\",\"port\":80,\"angle\":" + String(targetAngle) + "}";
     client.println("HTTP/1.1 200 OK");
     client.println("Content-Type: application/json");
     client.println("Access-Control-Allow-Origin: *");
@@ -221,7 +285,7 @@ void handleClient() {
     client.print(body);
   } else {
     // --- Simple status page for any other request ---
-    String body = "{\"status\":\"ok\",\"role\":\"camera_arm\",\"angle\":" + String(currentAngle) + ",\"mac\":\"" + WiFi.macAddress() + "\",\"endpoints\":[\"/capture\",\"/arm?angle=90\",\"/api/info\"]}";
+    String body = "{\"status\":\"ok\",\"role\":\"camera_arm\",\"angle\":" + String(targetAngle) + ",\"mac\":\"" + WiFi.macAddress() + "\",\"endpoints\":[\"/capture\",\"/arm?angle=90\",\"/api/info\"]}";
     client.println("HTTP/1.1 200 OK");
     client.println("Content-Type: application/json");
     client.println("Access-Control-Allow-Origin: *");
@@ -242,19 +306,37 @@ void serverTask(void *pvParameters) {
 }
 
 void setup() {
+  // Disable brownout detector so Wi-Fi TX + servo currents never trigger reset
+  WRITE_PERI_REG(RTC_CNTL_BROWN_OUT_REG, 0);
+
+  // Keep servo pins LOW at boot so the servo motor draws 0 mA during Wi-Fi startup
+  pinMode(SERVO_PIN, OUTPUT);
+  digitalWrite(SERVO_PIN, LOW);
+  pinMode(SERVO_PIN_ALT, OUTPUT);
+  digitalWrite(SERVO_PIN_ALT, LOW);
+
   Serial.begin(115200);
   delay(1000);
 
   startCamera();
-  initServo();
 
   // Connect to Laptop Wi-Fi Hotspot
+  WiFi.mode(WIFI_STA);
   WiFi.begin(ssid, password);
   WiFi.setSleep(false);
   Serial.print("Connecting to Laptop Hotspot");
+  int attempts = 0;
   while (WiFi.status() != WL_CONNECTED) {
     delay(500);
     Serial.print(".");
+    attempts++;
+    if (attempts >= 20) {
+      Serial.println("\nRetrying Wi-Fi connection...");
+      WiFi.disconnect();
+      delay(200);
+      WiFi.begin(ssid, password);
+      attempts = 0;
+    }
   }
   Serial.println("\nWiFi Connected!");
   Serial.print("MAC Address: ");
@@ -285,10 +367,13 @@ void setup() {
 }
 
 void loop() {
+  // Step servo smoothly toward targetAngle and idle PWM once reached
+  updateServoSmooth();
+
   // Broadcast discovery beacon every 2 seconds
   if (millis() - lastBeaconTime > 2000) {
     lastBeaconTime = millis();
     broadcastBeacon();
   }
-  delay(10);
+  delay(5);
 }

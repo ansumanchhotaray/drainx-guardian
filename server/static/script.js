@@ -123,17 +123,20 @@ document.addEventListener('DOMContentLoaded', () => {
                 camDetail.textContent = `Connected (${cam.ip})`;
                 camMacBadge.textContent = `MAC: ${cam.mac}`;
 
-                // Automatically activate live stream if not already active
-                if (!cameraStreamActive) {
+                // Automatically activate or refresh live stream if not active or IP changed
+                if (!cameraStreamActive || camStream.dataset.activeIp !== cam.ip) {
                     cameraStreamActive = true;
+                    camStream.dataset.activeIp = cam.ip;
                     camStream.src = `/video_feed?t=${Date.now()}`;
                 }
             } else {
+                cameraStreamActive = false;
                 camDot.className = 'status-dot offline';
                 camDetail.textContent = `Offline (${cam.ip || 'ESP32-CAM'})`;
                 camMacBadge.textContent = `MAC: ${cam.mac}`;
             }
         } else {
+            cameraStreamActive = false;
             camDot.className = 'status-dot searching';
             camDetail.textContent = 'Scanning...';
             camMacBadge.textContent = 'MAC: Auto';
