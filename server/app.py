@@ -290,13 +290,16 @@ async def set_sensor_node(request: Request):
     return {"status": "ok", "url": url}
 
 # --- Motor Node Control ---
+_motor_lock = asyncio.Lock()
+_pending_motor_params: Optional[dict] = None
+
 @app.post("/api/motor")
 async def motor_command(request: Request):
     """
     Send a movement command to the Motor Node.
-    Body: { "dir": "f"|"b"|"l"|"r"|"s", "dur": <ms optional>, "speed": <150-255 optional> }
+    Body: { "dir": "f"|"b"|"l"|"r"|"s", "dur": <ms optional>, "speed": <100-255 optional> }
     """
-    global _motor_url
+    global _motor_url, _pending_motor_params
     import httpx
     body = await request.json()
     dir_cmd = body.get("dir", "s")
@@ -315,12 +318,29 @@ async def motor_command(request: Request):
     if speed:
         params["speed"] = speed
 
-    try:
-        async with httpx.AsyncClient() as client:
-            resp = await client.get(_motor_url, params=params, timeout=3.0)
-            return {"status": "ok", "dir": dir_cmd, "motor_response": resp.text}
-    except Exception as e:
-        return {"status": "error", "message": str(e)}
+    # Coalesce rapid commands so only the latest command is sent next
+    _pending_motor_params = params
+
+    if _motor_lock.locked():
+        return {"status": "queued", "dir": dir_cmd}
+
+    async with _motor_lock:
+        last_resp_text = ""
+        while _pending_motor_params is not None:
+            current_params = _pending_motor_params
+            _pending_motor_params = None
+            try:
+                async with httpx.AsyncClient() as client:
+                    resp = await client.get(
+                        _motor_url,
+                        params=current_params,
+                        headers={"Connection": "close"},
+                        timeout=1.5
+                    )
+                    last_resp_text = resp.text
+            except Exception as e:
+                return {"status": "error", "message": str(e)}
+        return {"status": "ok", "dir": dir_cmd, "motor_response": last_resp_text}
 
 @app.post("/api/motor_speed")
 async def motor_speed_command(request: Request):
@@ -338,12 +358,18 @@ async def motor_speed_command(request: Request):
             return {"status": "error", "message": "Motor node not discovered yet"}
 
     speed_url = _motor_url.rsplit("/", 1)[0] + "/speed"
-    try:
-        async with httpx.AsyncClient() as client:
-            resp = await client.get(speed_url, params={"val": speed}, timeout=3.0)
-            return {"status": "ok", "speed": resp.text}
-    except Exception as e:
-        return {"status": "error", "message": str(e)}
+    async with _motor_lock:
+        try:
+            async with httpx.AsyncClient() as client:
+                resp = await client.get(
+                    speed_url,
+                    params={"val": speed},
+                    headers={"Connection": "close"},
+                    timeout=1.5
+                )
+                return {"status": "ok", "speed": resp.text}
+        except Exception as e:
+            return {"status": "error", "message": str(e)}
 
 @app.post("/api/set_motor_node")
 async def set_motor_node(request: Request):

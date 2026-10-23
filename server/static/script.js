@@ -339,23 +339,26 @@ document.addEventListener('DOMContentLoaded', () => {
 
     document.querySelectorAll('.motor-btn').forEach(btn => {
         const dir = btn.dataset.dir;
+        let isPressed = false;
+
+        const stopPress = () => {
+            if (!isPressed) return;
+            isPressed = false;
+            btn.style.opacity = '1';
+            sendMotor('s');
+        };
+
         btn.addEventListener('pointerdown', (e) => {
             e.preventDefault();
-            sendMotor(dir);
+            if (isPressed) return;
+            isPressed = true;
+            try { btn.setPointerCapture(e.pointerId); } catch (_) {}
             btn.style.opacity = '0.7';
+            sendMotor(dir);
         });
-        btn.addEventListener('pointerup', () => {
-            sendMotor('s');
-            btn.style.opacity = '1';
-        });
-        btn.addEventListener('pointerleave', () => {
-            sendMotor('s');
-            btn.style.opacity = '1';
-        });
-        btn.addEventListener('pointercancel', () => {
-            sendMotor('s');
-            btn.style.opacity = '1';
-        });
+        btn.addEventListener('pointerup', stopPress);
+        btn.addEventListener('pointercancel', stopPress);
+        btn.addEventListener('lostpointercapture', stopPress);
     });
 
     // Manual Motor Connection Logic

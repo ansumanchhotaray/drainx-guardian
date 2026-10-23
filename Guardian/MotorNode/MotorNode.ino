@@ -261,8 +261,9 @@ void setup() {
 
   driveStop();
 
-  // Connect to Wi-Fi
+  // Connect to Wi-Fi (disable modem sleep for low-latency motor commands)
   WiFi.mode(WIFI_STA);
+  WiFi.setSleep(false);
   WiFi.begin(ssid, password);
   Serial.print("\nConnecting to Wi-Fi");
   while (WiFi.status() != WL_CONNECTED) {
