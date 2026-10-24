@@ -46,8 +46,9 @@ unsigned long lastBeaconTime = 0;
 #define SERVO_FREQ         50   // Standard 50 Hz servo PWM (20 ms period)
 #define SERVO_RES          14   // 14-bit resolution (0 - 16383 ticks)
 
-int currentAngle = 90;          // Current physical servo angle
-int targetAngle  = 90;          // Requested target servo angle
+int currentAngle   = 90;        // Current logical servo angle (0 - 180)
+int targetAngle    = 90;        // Requested target servo angle (0 - 180)
+float smoothAngle  = 90.0f;     // Sub-degree floating-point angle for microsecond interpolation
 bool servoAttached = false;
 bool servoActive   = false;
 unsigned long lastServoStepTime = 0;
@@ -67,9 +68,9 @@ void attachServoPWM() {
   servoAttached = true;
 }
 
-void applyServoPWM(int angle) {
+void applyServoPulseUs(long pulseUs) {
   attachServoPWM();
-  long pulseUs = map(angle, 0, 180, 500, 2400);
+  pulseUs = constrain(pulseUs, 500L, 2400L);
   uint32_t duty = (uint32_t)((pulseUs * 16384L) / 20000L);
 
 #if defined(ESP_ARDUINO_VERSION_MAJOR) && ESP_ARDUINO_VERSION_MAJOR >= 3
@@ -96,25 +97,49 @@ void stopServoPulses() {
 void setTargetServoAngle(int angle) {
   targetAngle = constrain(angle, 0, 180);
   servoActive = true;
-  servoIdleTime = millis() + 400;
+  servoIdleTime = millis() + 1000;
 }
 
 void updateServoSmooth() {
   if (!servoActive) return;
 
   unsigned long now = millis();
-  if (currentAngle != targetAngle) {
-    if (now - lastServoStepTime >= 12) { // Step every 12 ms for low-current smooth motion
-      lastServoStepTime = now;
-      int diff = targetAngle - currentAngle;
-      int step = constrain(diff, -3, 3); // Max 3 degrees per 12 ms step
-      currentAngle += step;
-      applyServoPWM(currentAngle);
-      servoIdleTime = now + 250; // Hold pulse 250 ms after reaching final angle
+  const unsigned long STEP_INTERVAL_MS = 15; // Non-blocking 15 ms update interval (~66 Hz)
+
+  if (now - lastServoStepTime < STEP_INTERVAL_MS) return;
+  lastServoStepTime = now;
+
+  float diff = (float)targetAngle - smoothAngle;
+
+  if (abs(diff) > 0.25f) {
+    // Load-aware speed limit:
+    // In the high-load 90..180 deg zone, step gently (0.8 deg per 15 ms = ~53 deg/s)
+    // to prevent torque stall and voltage sag; in 0..90 deg, step at 1.5 deg per 15 ms.
+    float maxStep = (smoothAngle >= 85.0f || targetAngle >= 90) ? 0.8f : 1.5f;
+
+    // Proportional easing near the target to eliminate stopping jerk/overshoot
+    float step = diff * 0.18f;
+    if (step >  maxStep) step =  maxStep;
+    if (step < -maxStep) step = -maxStep;
+    if (abs(step) < 0.35f) step = (diff > 0) ? 0.35f : -0.35f;
+
+    smoothAngle += step;
+    if (abs((float)targetAngle - smoothAngle) <= 0.35f) {
+      smoothAngle = (float)targetAngle;
     }
+    currentAngle = (int)(smoothAngle + 0.5f);
+
+    // Sub-degree microsecond mapping (500 us to 2400 us) for ultra-smooth PWM resolution
+    long pulseUs = (long)(500.0f + (smoothAngle / 180.0f) * 1900.0f);
+    applyServoPulseUs(pulseUs);
+    servoIdleTime = now + 800;
   } else {
-    // Reached target angle; stop pulses after settling window so servo draws 0 mA
-    if ((long)(now - servoIdleTime) >= 0) {
+    smoothAngle = (float)targetAngle;
+    currentAngle = targetAngle;
+
+    // Only cut holding pulses when parked in the low-load resting zone (< 85 deg).
+    // Above 85 deg, keep PWM active so gravity doesn't pull the loaded strainer down and cause jerking.
+    if (currentAngle < 85 && (long)(now - servoIdleTime) >= 0) {
       stopServoPulses();
     }
   }
