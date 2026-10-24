@@ -70,7 +70,8 @@ void attachServoPWM() {
 
 void applyServoPulseUs(long pulseUs) {
   attachServoPWM();
-  pulseUs = constrain(pulseUs, 500L, 2400L);
+  // Cap upper pulse at 2300 us so 180 deg never hits the physical gear end-stop and stalls the 5V rail
+  pulseUs = constrain(pulseUs, 540L, 2300L);
   uint32_t duty = (uint32_t)((pulseUs * 16384L) / 20000L);
 
 #if defined(ESP_ARDUINO_VERSION_MAJOR) && ESP_ARDUINO_VERSION_MAJOR >= 3
@@ -104,7 +105,7 @@ void updateServoSmooth() {
   if (!servoActive) return;
 
   unsigned long now = millis();
-  const unsigned long STEP_INTERVAL_MS = 15; // Non-blocking 15 ms update interval (~66 Hz)
+  const unsigned long STEP_INTERVAL_MS = 18; // Non-blocking 18 ms update interval (~55 Hz)
 
   if (now - lastServoStepTime < STEP_INTERVAL_MS) return;
   lastServoStepTime = now;
@@ -113,33 +114,32 @@ void updateServoSmooth() {
 
   if (abs(diff) > 0.25f) {
     // Load-aware speed limit:
-    // In the high-load 90..180 deg zone, step gently (0.8 deg per 15 ms = ~53 deg/s)
-    // to prevent torque stall and voltage sag; in 0..90 deg, step at 1.5 deg per 15 ms.
-    float maxStep = (smoothAngle >= 85.0f || targetAngle >= 90) ? 0.8f : 1.5f;
+    // In the high-load 90..180 deg lifting zone, step gently (0.55 deg per 18 ms = ~30 deg/s)
+    // to prevent torque stall and 5V voltage sag; in 0..90 deg, step at 1.2 deg per 18 ms.
+    float maxStep = (smoothAngle >= 85.0f || targetAngle >= 90) ? 0.55f : 1.2f;
 
     // Proportional easing near the target to eliminate stopping jerk/overshoot
-    float step = diff * 0.18f;
+    float step = diff * 0.16f;
     if (step >  maxStep) step =  maxStep;
     if (step < -maxStep) step = -maxStep;
-    if (abs(step) < 0.35f) step = (diff > 0) ? 0.35f : -0.35f;
+    if (abs(step) < 0.30f) step = (diff > 0) ? 0.30f : -0.30f;
 
     smoothAngle += step;
-    if (abs((float)targetAngle - smoothAngle) <= 0.35f) {
+    if (abs((float)targetAngle - smoothAngle) <= 0.30f) {
       smoothAngle = (float)targetAngle;
     }
     currentAngle = (int)(smoothAngle + 0.5f);
 
-    // Sub-degree microsecond mapping (500 us to 2400 us) for ultra-smooth PWM resolution
-    long pulseUs = (long)(500.0f + (smoothAngle / 180.0f) * 1900.0f);
+    // Sub-degree microsecond mapping (540 us to 2300 us) to avoid mechanical end-stop stall at 180 deg
+    long pulseUs = (long)(540.0f + (smoothAngle / 180.0f) * 1760.0f);
     applyServoPulseUs(pulseUs);
-    servoIdleTime = now + 800;
+    servoIdleTime = now + 1000;
   } else {
     smoothAngle = (float)targetAngle;
     currentAngle = targetAngle;
 
-    // Only cut holding pulses when parked in the low-load resting zone (< 85 deg).
-    // Above 85 deg, keep PWM active so gravity doesn't pull the loaded strainer down and cause jerking.
-    if (currentAngle < 85 && (long)(now - servoIdleTime) >= 0) {
+    // Cut holding pulses once settled so the servo doesn't draw continuous stall current and brown out the camera
+    if ((long)(now - servoIdleTime) >= 0) {
       stopServoPulses();
     }
   }
@@ -349,6 +349,7 @@ void setup() {
   WiFi.mode(WIFI_STA);
   WiFi.begin(ssid, password);
   WiFi.setSleep(false);
+  WiFi.setTxPower(WIFI_POWER_15dBm); // Reduce peak RF TX current spikes to protect camera & servo 5V rail
   Serial.print("Connecting to Laptop Hotspot");
   int attempts = 0;
   while (WiFi.status() != WL_CONNECTED) {

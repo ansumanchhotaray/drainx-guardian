@@ -77,6 +77,17 @@ _thread: threading.Thread = None
 _debris_detected: bool = False
 _detected_items: list[str] = []
 _detected_boxes: list[dict] = []
+_pause_until: float = 0.0
+
+
+def pause_for_arm_movement(duration_sec: float = 2.6):
+    """
+    Temporarily pause ESP32-CAM /capture polling while the servo arm is moving.
+    This prevents simultaneous camera DMA + Wi-Fi JPEG TX current spikes + servo inrush current
+    from browning out or crashing the ESP32-CAM.
+    """
+    global _pause_until
+    _pause_until = max(_pause_until, time.time() + duration_sec)
 
 
 def get_detection_state() -> dict:
@@ -157,17 +168,28 @@ def _poll_snapshots():
             time.sleep(0.5)
             continue
 
+        # Yield camera & Wi-Fi bus while the servo arm is sweeping to prevent voltage sag / HTTP contention
+        now = time.time()
+        if now < _pause_until:
+            time.sleep(min(0.2, _pause_until - now))
+            continue
+
         try:
             # Fetch a single JPEG snapshot from the ESP32-CAM
             response = requests.get(url, headers={"Connection": "close"}, timeout=3)
 
             if response.status_code != 200:
                 print(f"[Vision] Snapshot request failed: HTTP {response.status_code}")
-                time.sleep(0.2)
+                time.sleep(0.4)
+                continue
+
+            # Validate complete JPEG markers (SOI 0xFFD8 and EOI 0xFFD9) to ignore truncated frames
+            jpg_data = response.content
+            if len(jpg_data) < 128 or not jpg_data.startswith(b"\xff\xd8") or not jpg_data.endswith(b"\xff\xd9"):
+                time.sleep(0.15)
                 continue
 
             # Decode the JPEG image for YOLO detection
-            jpg_data = response.content
             frame = cv2.imdecode(
                 np.frombuffer(jpg_data, dtype=np.uint8),
                 cv2.IMREAD_COLOR
@@ -177,12 +199,21 @@ def _poll_snapshots():
                 time.sleep(0.2)
                 continue
 
+            # If arm movement started while we were downloading this frame, don't overwrite detection state
+            if time.time() < _pause_until:
+                with _frame_lock:
+                    _latest_frame = jpg_data
+                continue
+
             # Run YOLO inference (clean, no image alteration)
             detect_objects(frame)
 
             # Store the pristine camera JPEG bytes directly (no re-encoding overhead)
             with _frame_lock:
                 _latest_frame = jpg_data
+
+            # Brief pacing delay so ESP32-CAM isn't hammered at 100% Wi-Fi TX duty cycle
+            time.sleep(0.08)
 
         except requests.exceptions.ConnectionError:
             print(f"[Vision] Cannot reach camera at {url}. Retrying in 2s...")

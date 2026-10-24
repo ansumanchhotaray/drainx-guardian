@@ -11,7 +11,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;800&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="/static/style.css?v=20261023_14">
+    <link rel="stylesheet" href="/static/style.css?v=20261024_01">
 </head>
 
 <body>
@@ -66,6 +66,28 @@
 
             <!-- Sensors & Motor Section -->
             <section class="sensors-section">
+                <!-- Autonomous Garbage Collection Mode Control (Above Sensors Panel) -->
+                <div class="auto-mode-panel glass-panel" id="auto-mode-panel">
+                    <div class="auto-mode-header">
+                        <div class="auto-mode-info">
+                            <span class="auto-mode-icon" id="auto-mode-icon">🤖</span>
+                            <div class="auto-mode-titles">
+                                <span class="auto-mode-title">Autonomous Garbage Collection</span>
+                                <span class="auto-mode-subtitle" id="auto-mode-status">Off — Manual Control (Arm Default: 90°)</span>
+                            </div>
+                        </div>
+                        <button type="button" class="auto-mode-btn" id="auto-mode-btn" aria-pressed="false">
+                            <span class="auto-btn-indicator" id="auto-btn-indicator"></span>
+                            <span id="auto-btn-text">Enable Auto Mode</span>
+                        </button>
+                    </div>
+                    <div class="auto-status-pills" id="auto-status-pills">
+                        <span class="auto-pill" id="auto-pill-vision">📷 Camera: Clear</span>
+                        <span class="auto-pill" id="auto-pill-wheels">⚙️ Wheels: Stopped</span>
+                        <span class="auto-pill" id="auto-pill-arm">🦾 Arm: 90°</span>
+                    </div>
+                </div>
+
                 <div class="node-status-bar" id="sensor-status-bar" style="margin-bottom: 0.5rem;">
                     <div class="node-status-info">
                         <span class="status-dot searching" id="sensor-dot"></span>
@@ -216,7 +238,7 @@
         </main>
     </div>
 
-    <script src="/static/script.js?v=20261023_14"></script>
+    <script src="/static/script.js?v=20261024_01"></script>
 </body>
 
 </html>

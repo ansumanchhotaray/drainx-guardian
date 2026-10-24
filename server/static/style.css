@@ -721,3 +721,182 @@ h1 span {
     background: #f8fafc;
     color: var(--text-muted);
 }
+
+.arm-btn.active-preset {
+    background: var(--accent-primary);
+    color: #ffffff;
+    border-color: var(--accent-primary);
+    box-shadow: 0 2px 6px rgba(37, 99, 235, 0.25);
+}
+
+.motor-btn-row button.active-motor-cmd {
+    outline: 2.5px solid #0f172a;
+    outline-offset: 1px;
+    transform: translateY(-1px);
+}
+
+/* Autonomous Garbage Collection Panel (Top of Sensors Section) */
+.auto-mode-panel {
+    margin-bottom: 0.75rem;
+    padding: 0.9rem 1.1rem;
+    border: 1.5px solid rgba(37, 99, 235, 0.22);
+    background: linear-gradient(135deg, rgba(255, 255, 255, 0.94), rgba(239, 246, 255, 0.86));
+    transition: all 0.25s ease;
+}
+
+.auto-mode-panel.auto-active {
+    border-color: rgba(5, 150, 105, 0.45);
+    background: linear-gradient(135deg, rgba(236, 253, 245, 0.95), rgba(209, 250, 229, 0.82));
+    box-shadow: 0 8px 24px -4px rgba(5, 150, 105, 0.16);
+}
+
+.auto-mode-panel.auto-collecting {
+    border-color: rgba(220, 38, 38, 0.55);
+    background: linear-gradient(135deg, rgba(254, 242, 242, 0.96), rgba(254, 202, 202, 0.85));
+    box-shadow: 0 8px 24px -4px rgba(220, 38, 38, 0.22);
+}
+
+.auto-mode-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+}
+
+.auto-mode-info {
+    display: flex;
+    align-items: center;
+    gap: 0.65rem;
+    min-width: 0;
+}
+
+.auto-mode-icon {
+    font-size: 1.45rem;
+    width: 40px;
+    height: 40px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #ffffff;
+    border-radius: 11px;
+    border: 1px solid var(--panel-border);
+    flex-shrink: 0;
+    box-shadow: 0 2px 6px rgba(15, 23, 42, 0.05);
+}
+
+.auto-mode-titles {
+    display: flex;
+    flex-direction: column;
+    gap: 0.1rem;
+    min-width: 0;
+}
+
+.auto-mode-title {
+    font-size: 0.92rem;
+    font-weight: 700;
+    color: var(--text-main);
+    line-height: 1.2;
+}
+
+.auto-mode-subtitle {
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--text-muted);
+    line-height: 1.25;
+}
+
+.auto-mode-panel.auto-active .auto-mode-subtitle {
+    color: var(--success);
+}
+
+.auto-mode-panel.auto-collecting .auto-mode-subtitle {
+    color: var(--danger);
+}
+
+.auto-mode-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+    background: var(--accent-primary);
+    color: #ffffff;
+    border: none;
+    border-radius: 11px;
+    padding: 0.55rem 0.95rem;
+    font-family: inherit;
+    font-size: 0.8rem;
+    font-weight: 700;
+    cursor: pointer;
+    white-space: nowrap;
+    flex-shrink: 0;
+    box-shadow: 0 3px 10px rgba(37, 99, 235, 0.28);
+    transition: all 0.2s ease;
+}
+
+.auto-mode-btn:hover {
+    background: #1d4ed8;
+    transform: translateY(-1px);
+}
+
+.auto-mode-btn:active {
+    transform: scale(0.97);
+}
+
+.auto-mode-btn.active {
+    background: var(--success);
+    box-shadow: 0 3px 12px rgba(5, 150, 105, 0.35);
+}
+
+.auto-mode-btn.active:hover {
+    background: #047857;
+}
+
+.auto-mode-panel.auto-collecting .auto-mode-btn.active {
+    background: var(--danger);
+    box-shadow: 0 3px 12px rgba(220, 38, 38, 0.35);
+}
+
+.auto-btn-indicator {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.65);
+    transition: all 0.2s ease;
+}
+
+.auto-mode-btn.active .auto-btn-indicator {
+    background: #ffffff;
+    box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.35);
+}
+
+.auto-status-pills {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 0.4rem;
+    margin-top: 0.65rem;
+}
+
+.auto-pill {
+    background: rgba(255, 255, 255, 0.85);
+    border: 1px solid rgba(15, 23, 42, 0.1);
+    border-radius: 8px;
+    padding: 0.28rem 0.45rem;
+    font-size: 0.72rem;
+    font-weight: 600;
+    color: var(--text-main);
+    text-align: center;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.auto-pill.pill-alert {
+    background: rgba(220, 38, 38, 0.12);
+    border-color: rgba(220, 38, 38, 0.35);
+    color: var(--danger);
+}
+
+.auto-pill.pill-ok {
+    background: rgba(5, 150, 105, 0.12);
+    border-color: rgba(5, 150, 105, 0.3);
+    color: var(--success);
+}

@@ -36,6 +36,142 @@ document.addEventListener('DOMContentLoaded', () => {
     const annotationLayer = document.getElementById('annotation-layer');
     const videoSection = document.querySelector('.video-section');
 
+    // Autonomous Garbage Collection elements
+    const autoModePanel = document.getElementById('auto-mode-panel');
+    const autoModeBtn = document.getElementById('auto-mode-btn');
+    const autoBtnText = document.getElementById('auto-btn-text');
+    const autoModeStatus = document.getElementById('auto-mode-status');
+    const autoPillVision = document.getElementById('auto-pill-vision');
+    const autoPillWheels = document.getElementById('auto-pill-wheels');
+    const autoPillArm = document.getElementById('auto-pill-arm');
+    let autoModeEnabled = false;
+
+    function highlightActiveActuators(motorDir, armAngle) {
+        if (motorDir !== undefined) {
+            document.querySelectorAll('.motor-btn-row button').forEach(btn => {
+                const btnDir = btn.dataset.dir || 's';
+                if (btnDir === motorDir) {
+                    btn.classList.add('active-motor-cmd');
+                } else {
+                    btn.classList.remove('active-motor-cmd');
+                }
+            });
+        }
+        if (armAngle !== undefined) {
+            document.querySelectorAll('.arm-preset').forEach(btn => {
+                if (parseInt(btn.dataset.angle, 10) === parseInt(armAngle, 10)) {
+                    btn.classList.add('active-preset');
+                } else {
+                    btn.classList.remove('active-preset');
+                }
+            });
+        }
+    }
+
+    function updateAutoState(auto) {
+        if (!auto) return;
+        autoModeEnabled = Boolean(auto.enabled);
+
+        if (autoModeBtn) {
+            autoModeBtn.setAttribute('aria-pressed', autoModeEnabled ? 'true' : 'false');
+            autoModeBtn.classList.toggle('active', autoModeEnabled);
+        }
+        if (autoBtnText) {
+            autoBtnText.textContent = autoModeEnabled ? 'Auto Mode: ON' : 'Enable Auto Mode';
+        }
+
+        if (autoModePanel) {
+            autoModePanel.classList.remove('auto-active', 'auto-collecting');
+            if (autoModeEnabled) {
+                if (auto.state === 'collecting' || auto.debris_detected) {
+                    autoModePanel.classList.add('auto-collecting');
+                } else {
+                    autoModePanel.classList.add('auto-active');
+                }
+            }
+        }
+
+        if (autoModeStatus) {
+            if (!autoModeEnabled) {
+                autoModeStatus.textContent = 'Off — Manual Control (Arm Default: 90°)';
+            } else if (auto.state === 'collecting' || auto.debris_detected) {
+                autoModeStatus.textContent = '⚠️ Garbage Detected! Wheels Stopped • Arm Raising to 180°';
+            } else {
+                autoModeStatus.textContent = 'Auto Active — Driving Forward • Arm at 90°';
+            }
+        }
+
+        // Update telemetry pills
+        if (autoPillVision) {
+            if (auto.debris_detected) {
+                autoPillVision.textContent = '📷 Garbage Detected!';
+                autoPillVision.className = 'auto-pill pill-alert';
+            } else {
+                autoPillVision.textContent = '📷 Camera: Clear';
+                autoPillVision.className = 'auto-pill pill-ok';
+            }
+        }
+
+        if (autoPillWheels) {
+            const dir = auto.motor_dir || 's';
+            if (dir === 'f') {
+                autoPillWheels.textContent = '⚙️ Wheels: Moving Forward';
+                autoPillWheels.className = 'auto-pill pill-ok';
+            } else if (dir === 'b') {
+                autoPillWheels.textContent = '⚙️ Wheels: Moving Back';
+                autoPillWheels.className = 'auto-pill';
+            } else {
+                autoPillWheels.textContent = '⚙️ Wheels: Stopped';
+                autoPillWheels.className = (autoModeEnabled && auto.state === 'collecting')
+                    ? 'auto-pill pill-alert'
+                    : 'auto-pill';
+            }
+        }
+
+        if (autoPillArm) {
+            const angle = auto.arm_angle !== undefined ? auto.arm_angle : 90;
+            if (angle >= 170) {
+                autoPillArm.textContent = `🦾 Arm: ${angle}° (Picking Up)`;
+                autoPillArm.className = 'auto-pill pill-alert';
+            } else if (angle === 90) {
+                autoPillArm.textContent = '🦾 Arm: 90° (Default)';
+                autoPillArm.className = 'auto-pill pill-ok';
+            } else {
+                autoPillArm.textContent = `🦾 Arm: ${angle}°`;
+                autoPillArm.className = 'auto-pill';
+            }
+        }
+
+        if (auto.arm_angle !== undefined && !isUserDraggingArm) {
+            if (armSlider) armSlider.value = auto.arm_angle;
+            if (armAngleVal) armAngleVal.textContent = `${auto.arm_angle}°`;
+        }
+
+        highlightActiveActuators(auto.motor_dir, auto.arm_angle);
+    }
+
+    if (autoModeBtn) {
+        autoModeBtn.addEventListener('click', async () => {
+            const targetEnabled = !autoModeEnabled;
+            autoModeBtn.disabled = true;
+            try {
+                const resp = await fetch('/api/auto', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ enabled: targetEnabled })
+                });
+                const data = await resp.json();
+                if (data.status === 'ok' && data.auto) {
+                    updateAutoState(data.auto);
+                }
+            } catch (e) {
+                console.error('Failed to toggle Auto Mode:', e);
+            } finally {
+                autoModeBtn.disabled = false;
+            }
+        });
+    }
+
     function updateVisionStatus(vision) {
         if (!vision) return;
 
@@ -226,6 +362,11 @@ document.addEventListener('DOMContentLoaded', () => {
         if (nodes.vision) {
             updateVisionStatus(nodes.vision);
         }
+
+        // --- Autonomous Mode Status ---
+        if (nodes.auto) {
+            updateAutoState(nodes.auto);
+        }
     }
 
     // Initial query for currently discovered nodes
@@ -259,16 +400,25 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (data.type === 'initial_state') {
                     if (data.nodes) updateNodes(data.nodes);
                     if (data.sensor_data) updateDashboard(data.sensor_data);
+                    if (data.auto) updateAutoState(data.auto);
                 } else if (data.type === 'node_update') {
                     if (data.nodes) updateNodes(data.nodes);
+                    if (data.auto) updateAutoState(data.auto);
                 } else if (data.type === 'vision_update') {
                     if (data.vision) updateVisionStatus(data.vision);
+                    if (data.auto) updateAutoState(data.auto);
                 } else if (data.type === 'arm_update') {
                     if (data.angle !== undefined && !isUserDraggingArm) {
                         if (armSlider) armSlider.value = data.angle;
                         if (armAngleVal) armAngleVal.textContent = `${data.angle}°`;
                     }
                     if (data.nodes) updateNodes(data.nodes);
+                    if (data.auto) updateAutoState(data.auto);
+                } else if (data.type === 'motor_update') {
+                    if (data.auto) updateAutoState(data.auto);
+                    else highlightActiveActuators(data.dir, undefined);
+                } else if (data.type === 'auto_update') {
+                    if (data.auto) updateAutoState(data.auto);
                 } else {
                     // Sensor data or other broadcast
                     updateDashboard(data);
