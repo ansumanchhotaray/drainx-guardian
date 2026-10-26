@@ -576,7 +576,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const motorSpeedSelect = document.getElementById('motor-speed');
 
     window.sendMotor = async function(dir, dur = 0) {
-        const speed = motorSpeedSelect ? parseInt(motorSpeedSelect.value, 10) : 150;
+        const speed = motorSpeedSelect ? parseInt(motorSpeedSelect.value, 10) : 175;
         try {
             await fetch('/api/motor', {
                 method: 'POST',

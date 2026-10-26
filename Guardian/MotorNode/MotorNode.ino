@@ -78,7 +78,7 @@ const int PWM_RES  = 8;      // 8-bit: 0-255
 // =====================================================
 // Runtime State
 // =====================================================
-uint8_t motorSpeed    = 150;   // Default drive speed (150/255)
+uint8_t motorSpeed    = 175;   // Default drive speed (175/255)
 bool invertChannelA   = false; // Flip left-side direction in software
 bool invertChannelB   = false; // Flip right-side direction in software
 String currentDir     = "s";   // Last commanded direction

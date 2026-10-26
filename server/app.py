@@ -39,7 +39,7 @@ _motor_url: Optional[str] = None
 _arm_url: Optional[str] = None
 _arm_angle: int = 90
 _motor_dir: str = "s"
-_motor_speed: int = 150
+_motor_speed: int = 175
 
 # Autonomous Garbage Collection state
 _auto_mode: bool = False
@@ -559,7 +559,7 @@ async def motor_speed_command(request: Request):
     global _motor_url, _motor_speed
     import httpx
     body = await request.json()
-    speed = int(body.get("speed", 150))
+    speed = int(body.get("speed", 175))
     _motor_speed = speed
 
     if not _motor_url:
