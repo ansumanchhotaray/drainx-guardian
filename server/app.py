@@ -43,14 +43,15 @@ _motor_speed: int = 175
 
 # Autonomous Garbage Collection state
 _auto_mode: bool = False
-_auto_state: str = "idle"  # "idle" | "cruising" | "collecting"
+_auto_state: str = "idle"  # "idle" | "waiting" | "picking_up" | "moving"
 _last_debris_seen_at: float = 0.0
+_auto_pickup_started_at: float = 0.0
 _auto_last_cmd_dir: Optional[str] = None
 _auto_last_cmd_angle: Optional[int] = None
 _auto_motor_synced: bool = False
 _auto_arm_synced: bool = False
 _auto_last_retry_at: float = 0.0
-AUTO_PICKUP_HOLD_SEC: float = 2.5
+AUTO_ARM_RAISE_SEC: float = 3.5  # Seconds to allow arm to raise to 180° and pick up garbage before moving
 
 
 def get_auto_state() -> dict:
@@ -366,7 +367,7 @@ async def poll_sensors():
 
 async def monitor_vision_status():
     """Broadcasts AI debris detection, bounding boxes, and drives Autonomous Garbage Collection."""
-    global _auto_state, _last_debris_seen_at, _auto_last_cmd_dir, _auto_last_cmd_angle
+    global _auto_state, _last_debris_seen_at, _auto_pickup_started_at, _auto_last_cmd_dir, _auto_last_cmd_angle
     global _auto_motor_synced, _auto_arm_synced, _auto_last_retry_at
     last_state = None
     while True:
@@ -386,18 +387,26 @@ async def monitor_vision_status():
             if debris_detected:
                 _last_debris_seen_at = now
 
-            # Once garbage is detected in Auto Mode, latch into 'collecting' state (wheels stopped, arm at 180°)
-            # so the arm stays raised holding the garbage and never drops back to 90° if the camera loses sight
-            # of the lifted garbage or experiences a frame hiccup.
-            in_pickup_cycle = (_auto_state == "collecting") or debris_detected
+            # Once garbage is detected in Auto Mode, latch into the pickup -> move cycle:
+            # 1. 'picking_up': keep wheels stopped ('s') while raising arm to 180° to pick up garbage properly.
+            # 2. 'moving': once the arm has raised to 180° (after AUTO_ARM_RAISE_SEC), keep arm at 180° and drive forward ('f').
+            # 3. 'waiting': before any garbage is detected, stay stopped ('s') with arm at default 90°.
+            in_pickup_cycle = (_auto_state in ("picking_up", "moving")) or (_auto_pickup_started_at > 0.0) or debris_detected
 
             if in_pickup_cycle:
-                new_auto_state = "collecting"
-                target_dir = "s"
+                if _auto_pickup_started_at <= 0.0:
+                    _auto_pickup_started_at = now
+
                 target_angle = 180
+                if (now - _auto_pickup_started_at) < AUTO_ARM_RAISE_SEC:
+                    new_auto_state = "picking_up"
+                    target_dir = "s"
+                else:
+                    new_auto_state = "moving"
+                    target_dir = "f"
             else:
-                new_auto_state = "cruising"
-                target_dir = "f"
+                new_auto_state = "waiting"
+                target_dir = "s"
                 target_angle = 90
 
             state_changed = (new_auto_state != _auto_state)
@@ -416,30 +425,45 @@ async def monitor_vision_status():
             if need_motor or need_arm:
                 _auto_last_retry_at = now
 
-                if target_dir == "s":
-                    # Stop wheel motors immediately when garbage is detected, then raise arm to 180°
+                if _auto_state == "picking_up":
+                    # Ensure wheels stay stopped while raising collector arm to 180° to pick up garbage
                     if need_motor:
                         _auto_last_cmd_dir = target_dir
-                        print("[AutoMode] Garbage detected! Stopping wheel motors (dir=s)")
+                        print("[AutoMode] Garbage detected! Keeping wheel motors stopped while picking up (dir=s)")
                         res = await dispatch_motor_command("s", speed=_motor_speed)
                         _auto_motor_synced = (res.get("status") in ("ok", "queued"))
                     if need_arm:
+                        was_angle_change = angle_changed
                         _auto_last_cmd_angle = target_angle
                         print(f"[AutoMode] Raising collector arm to {target_angle}° to pick up garbage")
                         res = await dispatch_arm_command(target_angle)
                         _auto_arm_synced = (res.get("status") in ("ok", "queued"))
+                        if was_angle_change or _auto_arm_synced:
+                            _auto_pickup_started_at = time.time()
+                elif _auto_state == "moving":
+                    # Arm has finished raising to 180° and picked up garbage: now move forward!
+                    if need_arm:
+                        _auto_last_cmd_angle = target_angle
+                        print(f"[AutoMode] Keeping collector arm at {target_angle}°")
+                        res = await dispatch_arm_command(target_angle)
+                        _auto_arm_synced = (res.get("status") in ("ok", "queued"))
+                    if need_motor:
+                        _auto_last_cmd_dir = target_dir
+                        print(f"[AutoMode] Arm raised to 180° & garbage picked up — moving wheels forward (dir=f, speed={_motor_speed})")
+                        res = await dispatch_motor_command("f", speed=_motor_speed)
+                        _auto_motor_synced = (res.get("status") in ("ok", "queued"))
                 else:
-                    # Path is clear: keep arm at default 90° and drive wheels forward
+                    # Waiting for garbage: keep wheels stopped ('s') and arm at default 90°
+                    if need_motor:
+                        _auto_last_cmd_dir = target_dir
+                        print("[AutoMode] Waiting for garbage — keeping wheels stopped (dir=s)")
+                        res = await dispatch_motor_command("s", speed=_motor_speed)
+                        _auto_motor_synced = (res.get("status") in ("ok", "queued"))
                     if need_arm:
                         _auto_last_cmd_angle = target_angle
                         print(f"[AutoMode] Setting collector arm to default {target_angle}°")
                         res = await dispatch_arm_command(target_angle)
                         _auto_arm_synced = (res.get("status") in ("ok", "queued"))
-                    if need_motor:
-                        _auto_last_cmd_dir = target_dir
-                        print(f"[AutoMode] Path clear — moving wheels forward (dir=f, speed={_motor_speed})")
-                        res = await dispatch_motor_command("f", speed=_motor_speed)
-                        _auto_motor_synced = (res.get("status") in ("ok", "queued"))
 
             if state_changed:
                 await manager.broadcast({
@@ -546,8 +570,8 @@ async def motor_command(request: Request):
     dur     = body.get("dur", 0)
     speed   = body.get("speed", None)
 
-    # If Autonomous Mode is active and garbage is detected, prevent wheels from driving into garbage
-    if _auto_mode and _auto_state == "collecting" and dir_cmd != "s":
+    # If Autonomous Mode is active and waiting or picking up garbage, keep wheels stopped until 180° pickup completes
+    if _auto_mode and _auto_state in ("waiting", "picking_up") and dir_cmd != "s":
         dir_cmd = "s"
 
     return await dispatch_motor_command(dir_cmd, dur=dur, speed=speed)
@@ -744,12 +768,13 @@ async def set_auto_mode(request: Request):
     Enable or disable Autonomous Garbage Collection mode.
     Body: { "enabled": true | false }
     When enabled:
-      - If no garbage is detected: arm stays at default 90°, wheels move forward ('f').
-      - If garbage is detected by camera: wheels immediately stop ('s'), arm moves from 90° to 180°.
+      - If no garbage is detected: wheels stay stopped ('s') and arm stays at default 90° waiting for garbage.
+      - When garbage is detected by camera: arm raises from 90° to 180° while wheels stay stopped ('s'),
+        and once the arm has raised to 180° and picked up the garbage, wheels start moving forward ('f').
     When disabled:
       - Wheels stop ('s') and arm returns to default 90°.
     """
-    global _auto_mode, _auto_state, _last_debris_seen_at
+    global _auto_mode, _auto_state, _last_debris_seen_at, _auto_pickup_started_at
     global _auto_last_cmd_dir, _auto_last_cmd_angle, _auto_motor_synced, _auto_arm_synced, _auto_last_retry_at
 
     try:
@@ -768,28 +793,33 @@ async def set_auto_mode(request: Request):
     if _auto_mode:
         debris_now = bool(vision.get_detection_state().get("debris_detected", False))
         if debris_now:
-            _last_debris_seen_at = time.time()
-            _auto_state = "collecting"
+            now = time.time()
+            _last_debris_seen_at = now
+            _auto_pickup_started_at = now
+            _auto_state = "picking_up"
             _auto_last_cmd_dir = "s"
             _auto_last_cmd_angle = 180
-            print("[AutoMode] Enabled -> Garbage currently detected! Stopping wheels & moving arm to 180°")
+            print("[AutoMode] Enabled -> Garbage detected! Raising arm to 180° to pick up before moving")
             m_res = await dispatch_motor_command("s", speed=_motor_speed)
             a_res = await dispatch_arm_command(180)
+            _auto_pickup_started_at = time.time()
             _auto_motor_synced = (m_res.get("status") in ("ok", "queued"))
             _auto_arm_synced = (a_res.get("status") in ("ok", "queued"))
         else:
             _last_debris_seen_at = 0.0
-            _auto_state = "cruising"
-            _auto_last_cmd_dir = "f"
+            _auto_pickup_started_at = 0.0
+            _auto_state = "waiting"
+            _auto_last_cmd_dir = "s"
             _auto_last_cmd_angle = 90
-            print("[AutoMode] Enabled -> Path clear! Setting arm to 90° & driving wheels forward")
+            print("[AutoMode] Enabled -> Waiting for garbage! Keeping wheels stopped & setting arm to 90°")
+            m_res = await dispatch_motor_command("s", speed=_motor_speed)
             a_res = await dispatch_arm_command(90)
-            m_res = await dispatch_motor_command("f", speed=_motor_speed)
-            _auto_arm_synced = (a_res.get("status") in ("ok", "queued"))
             _auto_motor_synced = (m_res.get("status") in ("ok", "queued"))
+            _auto_arm_synced = (a_res.get("status") in ("ok", "queued"))
     else:
         _auto_state = "idle"
         _last_debris_seen_at = 0.0
+        _auto_pickup_started_at = 0.0
         _auto_last_cmd_dir = None
         _auto_last_cmd_angle = None
         _auto_motor_synced = False

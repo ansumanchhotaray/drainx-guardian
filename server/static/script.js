@@ -83,7 +83,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (autoModePanel) {
             autoModePanel.classList.remove('auto-active', 'auto-collecting');
             if (autoModeEnabled) {
-                if (auto.state === 'collecting' || auto.debris_detected) {
+                if (auto.state === 'picking_up' || auto.debris_detected) {
                     autoModePanel.classList.add('auto-collecting');
                 } else {
                     autoModePanel.classList.add('auto-active');
@@ -94,10 +94,12 @@ document.addEventListener('DOMContentLoaded', () => {
         if (autoModeStatus) {
             if (!autoModeEnabled) {
                 autoModeStatus.textContent = 'Off — Manual Control (Arm Default: 90°)';
-            } else if (auto.state === 'collecting' || auto.debris_detected) {
-                autoModeStatus.textContent = '⚠️ Garbage Detected! Wheels Stopped • Arm Raising to 180°';
+            } else if (auto.state === 'moving') {
+                autoModeStatus.textContent = '✅ Garbage Picked Up (180°) — Moving Forward!';
+            } else if (auto.state === 'picking_up' || auto.debris_detected) {
+                autoModeStatus.textContent = '⚠️ Garbage Detected! Raising Arm to 180° to Pick Up...';
             } else {
-                autoModeStatus.textContent = 'Auto Active — Driving Forward • Arm at 90°';
+                autoModeStatus.textContent = 'Auto Active — Waiting for Garbage • Wheels Stopped • Arm at 90°';
             }
         }
 
@@ -106,6 +108,9 @@ document.addEventListener('DOMContentLoaded', () => {
             if (auto.debris_detected) {
                 autoPillVision.textContent = '📷 Garbage Detected!';
                 autoPillVision.className = 'auto-pill pill-alert';
+            } else if (autoModeEnabled && (auto.state === 'picking_up' || auto.state === 'moving')) {
+                autoPillVision.textContent = '📷 Garbage Collected';
+                autoPillVision.className = 'auto-pill pill-ok';
             } else {
                 autoPillVision.textContent = '📷 Camera: Clear';
                 autoPillVision.className = 'auto-pill pill-ok';
@@ -120,19 +125,25 @@ document.addEventListener('DOMContentLoaded', () => {
             } else if (dir === 'b') {
                 autoPillWheels.textContent = '⚙️ Wheels: Moving Back';
                 autoPillWheels.className = 'auto-pill';
+            } else if (autoModeEnabled && auto.state === 'picking_up') {
+                autoPillWheels.textContent = '⚙️ Wheels: Waiting (Pickup)';
+                autoPillWheels.className = 'auto-pill pill-alert';
             } else {
                 autoPillWheels.textContent = '⚙️ Wheels: Stopped';
-                autoPillWheels.className = (autoModeEnabled && auto.state === 'collecting')
-                    ? 'auto-pill pill-alert'
-                    : 'auto-pill';
+                autoPillWheels.className = 'auto-pill';
             }
         }
 
         if (autoPillArm) {
             const angle = auto.arm_angle !== undefined ? auto.arm_angle : 90;
             if (angle >= 170) {
-                autoPillArm.textContent = `🦾 Arm: ${angle}° (Picking Up)`;
-                autoPillArm.className = 'auto-pill pill-alert';
+                if (autoModeEnabled && auto.state === 'moving') {
+                    autoPillArm.textContent = `🦾 Arm: ${angle}° (Picked Up)`;
+                    autoPillArm.className = 'auto-pill pill-ok';
+                } else {
+                    autoPillArm.textContent = `🦾 Arm: ${angle}° (Picking Up)`;
+                    autoPillArm.className = 'auto-pill pill-alert';
+                }
             } else if (angle === 90) {
                 autoPillArm.textContent = '🦾 Arm: 90° (Default)';
                 autoPillArm.className = 'auto-pill pill-ok';
