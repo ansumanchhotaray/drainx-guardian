@@ -1,2 +1,64 @@
-yolov8n.pt
-__pycache__
+# =============================================================================
+# 1. Python Virtual Environments (Root, server/, and any nested directories)
+# =============================================================================
+.venv/
+**/.venv/
+venv/
+**/venv/
+env/
+**/env/
+ENV/
+**/ENV/
+.Python
+pip-log.txt
+pip-delete-this-directory.txt
+
+# =============================================================================
+# 2. Machine Learning Weight Models & Ultralytics Artifacts
+# =============================================================================
+*.pt
+**/*.pt
+*.pth
+**/*.pth
+*.onnx
+**/*.onnx
+*.engine
+**/*.engine
+*.tflite
+**/*.tflite
+weights/
+**/weights/
+runs/
+**/runs/
+datasets/
+**/datasets/
+
+# =============================================================================
+# 3. Python Compiler Caches, Bytecode & Build Artifacts
+# =============================================================================
+__pycache__/
+**/__pycache__/
+*.py[cod]
+**/*.py[cod]
+*$py.class
+*.pyo
+*.pyd
+*.so
+.pytest_cache/
+**/.pytest_cache/
+.mypy_cache/
+**/.mypy_cache/
+.ruff_cache/
+**/.ruff_cache/
+build/
+dist/
+*.egg-info/
+**/*.egg-info/
+
+# =============================================================================
+# 4. Local Environment & OS / IDE Metadata
+# =============================================================================
+.env
+.env.*
+.DS_Store
+Thumbs.db

@@ -1,3 +1,5 @@
+import os
+from pathlib import Path
 import cv2
 import threading
 import numpy as np
@@ -42,12 +44,43 @@ _model = None
 _model_loading = False
 _model_lock = threading.Lock()
 
+
 def _load_model_worker():
     global _model, _model_loading
     try:
-        from ultralytics import YOLO
+        # Explicitly direct CLIP, Hugging Face, Torch, and Ultralytics caches to standard system ~/.cache paths
+        # right before the model is loaded so no local weights/clip folders are created in the workspace.
+        cache_root = Path(os.path.expanduser("~/.cache")).resolve()
+        clip_cache_dir = cache_root / "clip"
+        hf_cache_dir = cache_root / "huggingface"
+        torch_cache_dir = cache_root / "torch"
+        runs_cache_dir = cache_root / "ultralytics" / "runs"
+        clip_cache_dir.mkdir(parents=True, exist_ok=True)
+
+        os.environ["XDG_CACHE_HOME"] = str(cache_root)
+        os.environ["CLIP_CACHE_DIR"] = str(clip_cache_dir)
+        os.environ["HF_HOME"] = str(hf_cache_dir)
+        os.environ["HUGGINGFACE_HUB_CACHE"] = str(hf_cache_dir / "hub")
+        os.environ["TORCH_HOME"] = str(torch_cache_dir)
+
+        import ultralytics.utils
+        import ultralytics.nn.text_model
+        from ultralytics import YOLO, settings
+
+        # Ultralytics's CLIP wrapper passes `download_root=str(WEIGHTS_DIR / "clip")` to `clip.load()`,
+        # where WEIGHTS_DIR is loaded from AppData/Roaming/Ultralytics/settings.json. Point it to ~/.cache
+        # so `WEIGHTS_DIR / "clip"` resolves to ~/.cache/clip instead of a workspace folder.
+        settings.update({
+            "weights_dir": str(cache_root),
+            "runs_dir": str(runs_cache_dir),
+        })
+        ultralytics.utils.WEIGHTS_DIR = cache_root
+        ultralytics.utils.RUNS_DIR = runs_cache_dir
+        ultralytics.nn.text_model.WEIGHTS_DIR = cache_root
+
         print("[Vision] Loading YOLO-World (Zero-Shot) in background...")
-        model = YOLO("yolov8s-worldv2.pt")
+        model_path = Path(__file__).resolve().parent / "yolov8s-worldv2.pt"
+        model = YOLO(str(model_path) if model_path.exists() else "yolov8s-worldv2.pt")
         model.set_classes(DRAINAGE_CLASSES)
         with _model_lock:
             _model = model
@@ -57,6 +90,7 @@ def _load_model_worker():
     finally:
         _model_loading = False
 
+
 def start_model_loading():
     """Start loading the AI model in background without blocking video streaming."""
     global _model_loading
@@ -65,8 +99,10 @@ def start_model_loading():
         t = threading.Thread(target=_load_model_worker, daemon=True)
         t.start()
 
+
 def get_model():
     return _model
+
 
 # --- Shared state ---
 _camera_url: str = None
