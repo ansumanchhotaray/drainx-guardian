@@ -277,6 +277,6 @@ def set_camera_url(url: str):
 
 
 def get_latest_frame() -> bytes | None:
-    """Return the most recently processed (annotated) JPEG frame, or None."""
+    """Return the most recently captured JPEG frame, or None."""
     with _frame_lock:
         return _latest_frame

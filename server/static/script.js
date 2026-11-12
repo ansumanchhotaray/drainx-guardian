@@ -688,7 +688,7 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    // --- Arm Node Control Handlers (Robotic Collector Arm - Arduino Uno) ---
+    // --- Arm Node Control Handlers (Robotic Collector Arm on CameraAndArmNode) ---
     let lastArmSendTime = 0;
     let pendingArmTimeout = null;
 

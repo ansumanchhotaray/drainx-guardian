@@ -1,65 +1,66 @@
-I have this architecture in mind for the project.
+* DrainX Guardian — System Architecture & Integration Plan
 
-There would be an HTTP client on the ESP32 module (which will have all
-the sensors connected to it) that pushes sensor data via HTTP POST whenever readings
-are taken.
+DrainX Guardian is an autonomous drainage monitoring and garbage-collection system built around a modular three-node ESP32 architecture and a Python FastAPI central controller.
 
-The controller laptop will run a Wi-Fi Mobile Hotspot to provide a
-constant local IP address for the ESP32.
+All ESP32 nodes connect to a Wi-Fi Mobile Hotspot (`drainx-controller`) hosted on the controller laptop and broadcast UDP discovery beacons on port `5005` every 2 seconds, enabling zero-configuration plug-and-play discovery. Exact pinouts and power connections are documented in `WIRING_GUIDE.md`.
 
-There would be a Python FastAPI web server on the laptop that receives the data directly from
-the ESP32 and displays it on its own website UI interface.
+** 1. Microcontroller Subsystem (Three-Node ESP32 Architecture)
+To overcome the ESP32-CAM's hardware limitations (specifically the conflict between Wi-Fi and ADC2 pins, limited free GPIOs, and 5V rail brownout sensitivity), the hardware is split across three dedicated ESP32 nodes:
 
-It should also detect the garbage in the camera feed since this is for
-this device which can detect garbage and clean but we don't have the
-cleaning mechanism yet, so we will just display the things.
+*** A. Camera & Arm Node (`CameraAndArmNode`, AI-Thinker ESP32-CAM)
+- **Role**: Combines live JPEG snapshot streaming (`/capture`) and the robotic debris-collector servo arm (`/arm?angle=0..180`) on a single AI-Thinker ESP32-CAM over Wi-Fi LAN (`role: "camera_arm"`).
+- **Software**: Runs `Guardian/CameraAndArmNode/CameraAndArmNode.ino`.
+  - Hosts an HTTP server on port `80` pinned to FreeRTOS Core 0 (`xTaskCreatePinnedToCore`).
+  - Serves single JPEG snapshots at `GET /capture` (`FRAMESIZE_QVGA`, `320x240`).
+  - Controls the collector servo arm at `GET /arm?angle=0..180` using 50 Hz, 14-bit LEDC PWM on Timer 2 (`GPIO 13` / `IO13` primary and `GPIO 14` / `IO14` driven in parallel) so it never conflicts with Camera XCLK on Timer 0.
+  - Implements power-safe servo control: disables the hardware brownout detector at boot, keeps servo PWM low during Wi-Fi association, steps the servo smoothly (`540 µs` to `2300 µs`) with load-aware ramping in the `90°–180°` lifting zone, and idles PWM pulses (`duty = 0`) once settled.
 
-The sensor connection approach is now documented in `WIRING_GUIDE.md`.
+*** B. Sensor Node (`SensorNode`, ESP32 WROOM)
+- **Role**: Reads all water quality sensors and serves live telemetry over HTTP (`role: "sensor"`).
+- **Sensors & Pinout** (uses ADC1 pins, which operate reliably alongside Wi-Fi):
+  - **Turbidity Sensor**: `GPIO 32` (`ADC1_CH4`) — calibrated to NTU and classified into `Clear Water` (`0–49`), `Turbid` (`50–75`), or `Very Turbid` (`76–150`).
+  - **pH Sensor**: `GPIO 35` (`ADC1_CH7`) — 10-sample buffer with bubble-sort outlier rejection (averaging the middle 6 samples) and linear Nernst calibration (`-5.70 * volt + 13.59`).
+  - **Temperature Sensor (DS18B20)**: `GPIO 4` — 1-Wire digital bus (`OneWire` + `DallasTemperature`).
+- **Software**: Runs `Guardian/SensorNode/SensorNode.ino`. Broadcasts UDP discovery beacons on port `5005` and exposes `GET /sensors` and `GET /info` on port `80`.
 
-We have camera sensor, turbidity sensor, ph sensor, and also temperature sensor.
-
-* Extended Architecture & Integration Plan
-
-** 1. Microcontroller Subsystem (Two-Board Architecture)
-To overcome the ESP32-CAM's hardware limitations (specifically the conflict between Wi-Fi and ADC2 pins), the system uses two separate ESP32 boards:
-
-*** A. Camera Node (ESP32-CAM)
-- **Role**: Dedicated exclusively to video streaming.
-- **Software**: Runs `Guardian/CameraNode.ino`. Connects to the Wi-Fi hotspot and hosts an **MJPEG-over-HTTP stream** on port 81 (`/stream`). This uses a persistent HTTP connection with `Content-Type: multipart/x-mixed-replace`, which continuously pushes JPEG frames without ever closing the connection.
-- **Hardware**: AI Thinker ESP32-CAM module.
-- **Note**: The Python backend *pulls* from this MJPEG stream, processes each frame for garbage detection, then re-serves the annotated video to the frontend via its own `/video_feed` endpoint.
-
-*** B. Sensor Node (ESP32 WROOM)
-- **Role**: Reads all environmental sensors and sends data via HTTP POST directly to the backend.
-- **Sensors**: Turbidity, pH, and Temperature.
-- **Hardware Integration**: Uses ADC1 pins (which are safe to use alongside Wi-Fi) for analog sensors.
-  - Turbidity: GPIO 32
-  - pH: GPIO 33
-  - Temperature: GPIO 34
-- **Software**: Runs `Guardian/SensorNode.ino`. Connects to the Wi-Fi hotspot, reads sensors every 2 seconds, and sends a JSON payload directly to the Python backend via an HTTP POST request.
+*** C. Motor Node (`MotorNode`, ESP32 WROOM + L298N Dual H-Bridge)
+- **Role**: Drives the robot's propulsion wheels based on commands from the backend server (`role: "motor"`).
+- **Hardware Pinout**:
+  - Channel A (Left Side): `IN1 = GPIO 14`, `IN2 = GPIO 27`, `ENA = GPIO 33` (20 kHz, 8-bit PWM).
+  - Channel B (Right Side): `IN3 = GPIO 26`, `IN4 = GPIO 18` & `GPIO 25` (driven in parallel), `ENB = GPIO 32` (20 kHz, 8-bit PWM).
+- **Software**: Runs `Guardian/MotorNode/MotorNode.ino`. Broadcasts UDP discovery beacons on port `5005` and exposes `GET /move?dir=f|b|l|r|s[&dur=ms][&speed=100-255]`, `GET /speed?val=100-255`, `GET /invert?ch=a|b`, `GET /status`, and `GET /info` on port `80`.
 
 ** 2. Controller Laptop (Central Hub)
-- **Network**: Runs a Wi-Fi Mobile Hotspot to host the local network.
-- **Backend Server**: Runs the Python FastAPI server which receives data directly from the ESP32.
+- **Network**: Runs a Wi-Fi Mobile Hotspot (`drainx-controller`) to host the local LAN.
+- **Backend Server**: Runs the Python FastAPI server (`server/app.py`) on `http://0.0.0.0:8000`.
 
-** 3. Backend Server (Python)
-- **Framework**: FastAPI.
-- **Data Ingestion**: Exposes an HTTP POST endpoint (`/api/sensors`) that the ESP32 WROOM calls to submit sensor data. This completely removes the need for an external MQTT broker.
-- **Camera URL Registration**: Exposes an HTTP POST endpoint (`/api/camera`) that the frontend calls once to tell the backend the ESP32-CAM's MJPEG stream URL.
-- **Video Proxying & Garbage Detection**: A background thread in `vision.py` pulls from the ESP32-CAM's MJPEG stream, runs garbage detection on each frame, and stores the latest annotated frame in memory. The `/video_feed` GET endpoint then re-serves this as a new MJPEG stream to the browser.
-- **WebSockets**: Broadcasts the received sensor data in real-time to the frontend dashboard via the `/ws` endpoint.
+** 3. Backend Server (Python / FastAPI)
+- **Auto-Discovery & Liveness (`server/app.py`)**:
+  - `udp_discovery_worker()` listens on `0.0.0.0:5005` for UDP broadcast beacons from `camera_arm`, `sensor`, and `motor` nodes, tracking their IP, MAC address, and online status (`monitor_node_liveness()`).
+  - Fallback manual IP override endpoints: `POST /api/camera`, `POST /api/set_sensor_node`, `POST /api/set_motor_node`, and `POST /api/set_arm_node`.
+- **Sensor Polling**: `poll_sensors()` asynchronously polls `GET http://<sensor_ip>:80/sensors` every 2 seconds via `httpx.AsyncClient` and broadcasts readings over WebSockets (`/ws`).
+- **Video Proxying & Zero-Shot Garbage Detection (`server/vision.py`)**:
+  - Background thread `_poll_snapshots()` fetches JPEG snapshots from `GET http://<camera_ip>:80/capture`, validates JPEG SOI (`0xFFD8`) and EOI (`0xFFD9`) markers, and temporarily pauses polling during servo arm movements (`pause_for_arm_movement()`) to prevent ESP32-CAM voltage sag.
+  - Runs zero-shot **YOLO-World** (`yolov8s-worldv2.pt`) inference across 12 TACO-inspired drainage litter classes (`DRAINAGE_CLASSES`).
+  - Re-serves pristine JPEG frames as an MJPEG stream at `GET /video_feed` (`multipart/x-mixed-replace; boundary=frame`) while broadcasting normalized bounding-box coordinates (`0–100%`) over `/ws`.
+- **Autonomous Garbage Collection State Machine (`/api/auto`, `monitor_vision_status()`)**:
+  - `waiting`: Before debris is seen, keeps wheels stopped (`dir="s"`) and collector arm at `90°`.
+  - `picking_up`: When YOLO-World detects garbage, keeps wheels stopped (`dir="s"`) while raising the collector arm to `180°` for `3.5s` (`AUTO_ARM_RAISE_SEC`).
+  - `moving`: Once the arm reaches `180°` and secures the debris, holds the arm at `180°` and drives the wheels forward (`dir="f"`).
 
-** 4. Frontend Web UI
-- **Technology**: HTML/CSS/JS served directly by the FastAPI backend (from `/static`).
+** 4. Frontend Web UI (`server/static/`)
+- **Technology**: HTML5, CSS3, and Vanilla JavaScript (`index.html`, `style.css`, `script.js`) served directly by FastAPI.
 - **Features**:
-  - A modern, glassmorphic dashboard displaying real-time sensor readings (Turbidity, pH, Temperature).
-  - A "Connect Stream" input where the user enters the ESP32-CAM's local IP. The frontend POSTs this URL to `/api/camera`, after which the backend begins pulling and processing the stream.
-  - A live video feed `<img>` element pointed at the backend's `/video_feed` endpoint, which displays the MJPEG stream with garbage detection overlays.
-  - Communicates with the Python backend via WebSockets (`/ws`) for zero-latency sensor data updates.
+  - Light-mode glassmorphic dashboard displaying real-time water quality cards (Turbidity, pH, Temperature), node discovery status bars with physical MAC badges, and collapsible Manual IP Override controls.
+  - Live camera feed (`<img src="/video_feed">`) with a synchronized CSS bounding-box overlay (`#annotation-layer`) and debris alert banner.
+  - Autonomous Garbage Collection toggle panel (`#auto-mode-panel`) with live status pills for camera, wheels, and collector arm.
+  - Hold-to-drive directional motor controls (`Pointer Events` API) with speed selector (`100–255`) and a collector arm slider (`0°–180°`) with preset/nudge buttons.
 
 ** 5. Full Data Flow Summary
 #+BEGIN_SRC
-ESP32 WROOM  ---(HTTP POST /api/sensors)---> FastAPI Backend ---(WebSocket /ws)---> Browser Dashboard
-ESP32-CAM    ---(MJPEG stream :81/stream)--> vision.py thread --> /video_feed   ---> Browser <img> tag
-Frontend     ---(HTTP POST /api/camera)----> FastAPI Backend  (registers the CAM URL, triggers vision.py)
+[ESP32 Nodes]      ---(UDP Beacon :5005)---------> FastAPI Backend ---(WebSocket /ws)---> Browser Dashboard
+[SensorNode]       <--(HTTP GET /sensors)--------- FastAPI Backend ---(WebSocket /ws)---> Browser Dashboard
+[CameraAndArmNode] <--(HTTP GET /capture)--------- vision.py thread -> /video_feed   ---> Browser <img> + CSS Boxes
+[CameraAndArmNode] <--(HTTP GET /arm?angle=0..180) FastAPI Backend <--(POST /api/arm)---- Browser / Auto Mode
+[MotorNode]        <--(HTTP GET /move, /speed)---- FastAPI Backend <--(POST /api/motor)-- Browser / Auto Mode
 #+END_SRC

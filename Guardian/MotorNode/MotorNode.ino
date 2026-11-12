@@ -12,13 +12,13 @@
  *
  *   GET /status   -> JSON with speed, direction, invertions, etc.
  *   GET /info     -> JSON node identity (matches Guardian convention)
- *   GET /speed?val=150-255
+ *   GET /speed?val=100-255
  *
  * Pinout (L298N driver, ESP32 WROOM):
  *   IN1 -> GPIO 14   (Channel A — Left Side)
  *   IN2 -> GPIO 27
  *   IN3 -> GPIO 26   (Channel B — Right Side)
- *   IN4 -> GPIO 18   [remapped from 25, which was found faulty]
+ *   IN4 -> GPIO 18 & GPIO 25 (driven in parallel)
  *   ENA -> GPIO 33
  *   ENB -> GPIO 32
  *

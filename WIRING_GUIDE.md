@@ -1,13 +1,13 @@
-# Two-Board Wiring & Connection Guide
+# Multi-Node Wiring & Connection Guide
 
-Since you have both an **ESP32-CAM** and a regular **ESP32 WROOM**, the best and most reliable approach is to use a **Two-Board Architecture**. 
+DrainX Guardian uses a **Three-Node ESP32 Architecture** combining an **AI-Thinker ESP32-CAM** (Camera & Collector Arm) with two **ESP32 WROOM** boards (Sensor Node and Motor Node).
 
-This completely solves the ESP32-CAM's ADC2/Wi-Fi limitation. The ESP32-CAM will handle the heavy lifting of video streaming, and the ESP32 WROOM will handle the precise analog sensor readings. Both will connect to your laptop's Wi-Fi hotspot.
+This modular separation completely solves the ESP32-CAM's ADC2/Wi-Fi hardware conflict and isolates high-current motor loads from sensitive analog water quality measurements. All three boards connect to your laptop's Wi-Fi hotspot (`drainx-controller`) and auto-discover via UDP broadcast on port `5005`.
 
 ---
 
 ## 1. Camera & Arm Node (AI-Thinker ESP32-CAM + Servo Arm)
-The ESP32-CAM runs `Guardian/CameraAndArmNode/CameraAndArmNode.ino` (also mirrored in `Guardian/CameraNode/CameraNode.ino`), serving both the live camera snapshots (`/capture`) and the robotic debris-collector servo arm (`/arm?angle=0..180`) over Wi-Fi LAN.
+The ESP32-CAM runs `Guardian/CameraAndArmNode/CameraAndArmNode.ino`, serving both the live camera snapshots (`/capture`) and the robotic debris-collector servo arm (`/arm?angle=0..180`) over Wi-Fi LAN.
 - **Code**: Upload `Guardian/CameraAndArmNode/CameraAndArmNode.ino` to the **AI-Thinker ESP32-CAM**.
 - **Auto-Discovery**: Broadcasts UDP beacons on port 5005 (`role: "camera_arm"`), automatically bringing both the **Camera** and **Collector Arm** panels online in the web dashboard.
 
@@ -36,12 +36,13 @@ The ESP32-CAM runs `Guardian/CameraAndArmNode/CameraAndArmNode.ino` (also mirror
 ---
 
 ## 2. Sensor Node (ESP32 WROOM)
-The ESP32 WROOM reads all the sensors and sends the data directly to the Python server via HTTP POST.
-- **Code**: Upload `Guardian/SensorNode.ino` to this board.
-- **Wiring**: We will use the **ADC1** pins on the ESP32 WROOM, which work perfectly even when Wi-Fi is turned on.
+The Sensor Node reads all water quality sensors and serves live JSON telemetry (`GET /sensors`) over HTTP on port 80, which the Python server polls every 2 seconds.
+- **Code**: Upload `Guardian/SensorNode/SensorNode.ino` to this board.
+- **Auto-Discovery**: Broadcasts UDP beacons on port 5005 (`role: "sensor"`).
+- **Wiring**: Uses **ADC1** pins on the ESP32 WROOM, which work reliably alongside Wi-Fi.
 
 ### Power Connections
-- **ESP32 5V (VIN)** -> Connect to the `VCC` or `5V` pin of the Turbidity, and pH sensors.
+- **ESP32 5V (VIN)** -> Connect to the `VCC` or `5V` pin of the Turbidity and pH sensors.
 - **ESP32 GND** -> Connect to the `GND` pin of **ALL** sensors.
 
 ### Sensor Data Connections
@@ -54,7 +55,7 @@ The ESP32 WROOM reads all the sensors and sends the data directly to the Python 
 #### 2. pH Sensor
 - **VCC** -> 5V
 - **GND** -> GND
-- **PO (Analog Out)** -> **GPIO 35** (ADC1_CH5)
+- **PO (Analog Out)** -> **GPIO 35** (ADC1_CH7)
 
 #### 3. Temperature Sensor (DS18B20)
 - **VCC** -> 3.3V or 5V
@@ -64,17 +65,17 @@ The ESP32 WROOM reads all the sensors and sends the data directly to the Python 
 ---
 
 ## 3. Motor Node (ESP32 WROOM + L298N)
-The Motor Node receives driving commands (forward, backward, left, right, stop) from the server and drives the wheels.
+The Motor Node receives driving commands (forward, backward, left, right, stop) from the server (`GET /move`, `GET /speed`, `GET /invert`) and drives the wheels.
 - **Code**: Upload `Guardian/MotorNode/MotorNode.ino` to this board.
 - **Auto-Discovery**: Sends UDP broadcast beacons on port 5005 (`role: "motor"`), automatically appearing on the web dashboard.
 
 ### Pinout (L298N Dual H-Bridge)
 - **IN1** -> **GPIO 14** (Channel A — Left Side)
-- **IN2** -> **GPIO 27**
+- **IN2** -> **GPIO 27** (Channel A — Left Side)
 - **IN3** -> **GPIO 26** (Channel B — Right Side)
-- **IN4** -> **GPIO 18** (Channel B — Right Side)
-- **ENA** -> **GPIO 33** (PWM Speed)
-- **ENB** -> **GPIO 32** (PWM Speed)
+- **IN4** -> **GPIO 18** or **GPIO 25** (Channel B — Right Side; both pins are driven in parallel)
+- **ENA** -> **GPIO 33** (PWM Speed, 20 kHz)
+- **ENB** -> **GPIO 32** (PWM Speed, 20 kHz)
 
 ### Power Connections
 - **L298N 12V** -> Battery (+) [7.4V - 12V]

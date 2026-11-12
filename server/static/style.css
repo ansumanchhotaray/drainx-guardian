@@ -603,7 +603,7 @@ h1 span {
     background: #b91c1c;
 }
 
-/* Arm Panel (Robotic Arm Debris Collector - Arduino Uno) */
+/* Arm Panel (Robotic Collector Arm on CameraAndArmNode) */
 .arm-panel {
     margin-top: 0.75rem;
     padding: 0.85rem 1.15rem;
